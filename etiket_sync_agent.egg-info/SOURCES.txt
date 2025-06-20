@@ -1,0 +1,9 @@
+README.md
+pyproject.toml
+etiket_sync_agent/__init__.py
+etiket_sync_agent/db.py
+etiket_sync_agent/run.py
+etiket_sync_agent.egg-info/PKG-INFO
+etiket_sync_agent.egg-info/SOURCES.txt
+etiket_sync_agent.egg-info/dependency_links.txt
+etiket_sync_agent.egg-info/top_level.txt
