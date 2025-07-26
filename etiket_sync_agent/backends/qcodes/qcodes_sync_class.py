@@ -3,13 +3,13 @@ import typing, sqlite3, qcodes as qc, os, logging
 from datetime import datetime
 
 from etiket_sync_agent.sync.sync_source_abstract import SyncSourceDatabaseBase
+from etiket_sync_agent.sync.sync_records.manager import SyncRecordManager
 from etiket_sync_agent.sync.sync_utilities import file_info, sync_utilities,\
     dataset_info, SyncItems, FileType
 
 from etiket_sync_agent.backends.qcodes.real_time_sync import QCoDeS_live_sync
 from etiket_sync_agent.backends.qcodes.qcodes_config_class import QCoDeSConfigData
 from etiket_sync_agent.backends.utility.extract_metadata_from_QCoDeS import extract_labels_and_attributes_from_snapshot, MetaDataExtractionError
-from etiket_sync_agent.backends.dataset_manifest import DatasetManifest
 
 from qcodes.dataset import load_by_id
 from qcodes.dataset.data_set import DataSet
@@ -54,10 +54,11 @@ class QCoDeSSync(SyncSourceDatabaseBase):
         return not ds_qc.completed
     
     @staticmethod
-    def syncDatasetNormal(configData: QCoDeSConfigData, syncIdentifier: SyncItems, dataset_manifest: DatasetManifest):
-        ds_qc = create_ds_from_qcodes(configData, syncIdentifier, False, dataset_manifest)
-        dataset_manifest.add_log("Converting dataset to xarray format")
-        ds_xr = ds_qc.to_xarray_dataset()
+    def syncDatasetNormal(configData: QCoDeSConfigData, syncIdentifier: SyncItems, sync_record: SyncRecordManager):
+        with sync_record.task("Loading dataset from QCoDeS"):
+            ds_qc = create_ds_from_qcodes(configData, syncIdentifier, False, sync_record)
+            sync_record.add_log("Converting dataset to xarray format")
+            ds_xr = ds_qc.to_xarray_dataset()
         
         if ds_qc.run_timestamp_raw is not None:
             created_time = datetime.fromtimestamp(ds_qc.run_timestamp_raw)
@@ -67,18 +68,19 @@ class QCoDeSSync(SyncSourceDatabaseBase):
         f_info = file_info(name = 'measurement', fileName = 'measured_data.hdf5',
                             fileType= FileType.HDF5_NETCDF,
                             created = created_time, file_generator = "QCoDeS")
-        sync_utilities.upload_xarray(ds_xr, syncIdentifier, f_info, dataset_manifest)
+        sync_utilities.upload_xarray(ds_xr, syncIdentifier, f_info, sync_record)
 
     @staticmethod
-    def syncDatasetLive(configData: QCoDeSConfigData, syncIdentifier: SyncItems, dataset_manifest: DatasetManifest):
-        create_ds_from_qcodes(configData, syncIdentifier, True, dataset_manifest)
-        dataset_manifest.add_log("Starting live feed to the remote server.")
+    def syncDatasetLive(configData: QCoDeSConfigData, syncIdentifier: SyncItems, sync_record: SyncRecordManager):
+        create_ds_from_qcodes(configData, syncIdentifier, True, sync_record)
+        sync_record.add_log("Starting live feed to the remote server.")
         QCoDeS_live_sync(int(syncIdentifier.dataIdentifier), str(configData.database_path), syncIdentifier.datasetUUID)
-        dataset_manifest.add_log("Live feed to the remote server completed.")
+        sync_record.add_log("Live feed to the remote server completed.")
 
-def create_ds_from_qcodes(configData: QCoDeSConfigData, syncIdentifier: SyncItems, live : bool, dataset_manifest: DatasetManifest) -> DataSet:
-    dataset_manifest.add_log("Trying to load dataset and extract metadata from QCoDeS with ID: " + syncIdentifier.dataIdentifier)
+def create_ds_from_qcodes(configData: QCoDeSConfigData, syncIdentifier: SyncItems, live : bool, sync_record: SyncRecordManager) -> DataSet:
+    sync_record.add_log("Loading dataset and extracting metadata from QCoDeS with ID: " + syncIdentifier.dataIdentifier)
     ds_qc = load_by_id(int(syncIdentifier.dataIdentifier))
+    sync_record.add_log("Dataset loaded from QCoDeS, will start extracting metadata")
 
     if ds_qc.run_timestamp_raw is not None:
         collected_time = datetime.fromtimestamp(ds_qc.run_timestamp_raw)
@@ -138,11 +140,12 @@ def create_ds_from_qcodes(configData: QCoDeSConfigData, syncIdentifier: SyncItem
     keywords.update(extra_labels)
     attributes.update(extra_attributes)   
     
+    sync_record.add_log("Creating dataset info")
     ds_info = dataset_info(name = name, datasetUUID = syncIdentifier.datasetUUID,
                 alt_uid = ds_qc.guid, scopeUUID = syncIdentifier.scopeIdentifier,
                 created = collected_time, keywords = list(keywords),  description = description,
                 ranking=ranking, creator=syncIdentifier.creator,
                 # exp_name not added, since some people use it to name their experiments ...
                 attributes = attributes)
-    sync_utilities.create_or_update_dataset(live, syncIdentifier, ds_info, dataset_manifest)
+    sync_utilities.create_or_update_dataset(live, syncIdentifier, ds_info, sync_record)
     return ds_qc

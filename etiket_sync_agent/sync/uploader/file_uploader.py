@@ -3,13 +3,13 @@ import logging, os, requests, urllib3, base64, hashlib
 from typing import Optional, Any
 from requests.exceptions import JSONDecodeError
 
-from etiket_sync_agent.backends.dataset_manifest import DatasetManifest
 from etiket_client.remote.endpoints.file import file_validate_upload_multi, file_validate_upload_single
 from etiket_client.remote.endpoints.models.file import FileValidate, FileSignedUploadLink, FileSignedUploadLinks
 from etiket_client.remote.client import client
 
 from etiket_client.exceptions import uploadFailedException
 from etiket_client.sync.base.checksums.any import md5
+from etiket_sync_agent.sync.sync_records.manager import SyncRecordManager
 
 logger = logging.getLogger(__name__)
 

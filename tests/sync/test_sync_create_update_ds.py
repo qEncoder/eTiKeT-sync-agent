@@ -43,7 +43,7 @@ from etiket_client.remote.endpoints.dataset import dataset_create, dataset_read
 
 from etiket_sync_agent.sync.sync_utilities import sync_utilities, dataset_info
 from etiket_sync_agent.models.sync_items import SyncItems
-from etiket_sync_agent.backends.dataset_manifest import DatasetManifest
+from etiket_sync_agent.sync.sync_records.manager import SyncRecordManager
 
 def test_case_1_dataset_not_present_locally_nor_remotely(
     session_etiket_client, 
@@ -67,7 +67,7 @@ def test_case_1_dataset_not_present_locally_nor_remotely(
         syncPriority=1.0,
         synchronized=False,
         attempts=0,
-        manifest={},
+        sync_record={},
         error=None,
         traceback=None
     )
@@ -86,13 +86,13 @@ def test_case_1_dataset_not_present_locally_nor_remotely(
         creator="test_user"
     )
     
-    dataset_manifest = DatasetManifest(sync_item=sync_item, dataset_path=None)
+    sync_record = SyncRecordManager(sync_item=sync_item, dataset_path=None)
     
     sync_utilities.create_or_update_dataset(
         live_mode=False,
         s_item=sync_item,
         ds_info=ds_info,
-        dataset_manifest=dataset_manifest
+        sync_record=sync_record
     )
     
     # Assert
@@ -112,11 +112,15 @@ def test_case_1_dataset_not_present_locally_nor_remotely(
     with pytest.raises(DatasetNotFoundException):
         dao_dataset.read(dataset_uuid, session=session_etiket_client)
     
-    # veryify that entries have been added to the log of the dataset_manifest
-    logs = dataset_manifest.get_logs()
-    assert len(logs) == 2
-    assert "Creating or updating dataset" in logs[0]
-    assert "Dataset record created on remote server" in logs[1]
+    # veryify that entries have been added to the log of the sync_record
+    sync_record_dict = sync_record.to_dict()
+    logs = sync_record_dict['logs']
+    assert len(logs) == 1
+    task = logs[0]
+    assert "Creating or updating dataset on remote server" in task['name']
+    assert len(task['content']) == 1
+    log_items = task['content']
+    assert "Dataset record created on remote server" in log_items[0]['message']
 
 def test_case_2_dataset_present_locally_not_remotely(
     session_etiket_client, 
@@ -159,7 +163,7 @@ def test_case_2_dataset_present_locally_not_remotely(
         syncPriority=1.0,
         synchronized=False,
         attempts=0,
-        manifest={},
+        sync_record={},
         error=None,
         traceback=None
     )
@@ -182,14 +186,14 @@ def test_case_2_dataset_present_locally_not_remotely(
         creator="test_user"
     )
     
-    dataset_manifest = DatasetManifest(sync_item=sync_item, dataset_path=None)
+    sync_record = SyncRecordManager(sync_item=sync_item, dataset_path=None)
     
     # Act
     sync_utilities.create_or_update_dataset(
         live_mode=True,
         s_item=sync_item,
         ds_info=ds_info,
-        dataset_manifest=dataset_manifest
+        sync_record=sync_record
     )
     
     # Assert
@@ -220,12 +224,16 @@ def test_case_2_dataset_present_locally_not_remotely(
         assert local_dataset.creator == ds_info.creator
     
     # Verify that entries have been added to the log of the dataset_manifest
-    logs = dataset_manifest.get_logs()
-    assert len(logs) >= 3
-    assert "Creating or updating dataset" in logs[0]
-    assert "Dataset record created on remote server" in logs[1]
-    assert "Dataset record found on local server" in logs[2] or "Dataset record updated on local server" in logs[2]
-
+    sync_record_dict = sync_record.to_dict()
+    logs = sync_record_dict['logs']
+    assert len(logs) == 1
+    task = logs[0]
+    assert "Creating or updating dataset on remote server" in task['name']
+    assert len(task['content']) == 3
+    log_items = task['content']
+    assert "Dataset record created on remote server" in log_items[0]['message']
+    assert "Dataset record found on local server (Live Dataset)." in log_items[1]['message']
+    assert "Dataset record updated on local server" in log_items[2]['message']
 
 def test_case_3_dataset_present_remotely_not_locally(
     session_etiket_client, 
@@ -266,7 +274,7 @@ def test_case_3_dataset_present_remotely_not_locally(
         syncPriority=1.0,
         synchronized=False,
         attempts=0,
-        manifest={},
+        sync_record={},
         error=None,
         traceback=None
     )
@@ -285,14 +293,14 @@ def test_case_3_dataset_present_remotely_not_locally(
         creator="test_user"
     )
     
-    dataset_manifest = DatasetManifest(sync_item=sync_item, dataset_path=None)
+    sync_record = SyncRecordManager(sync_item=sync_item, dataset_path=None)
     
     # Act
     sync_utilities.create_or_update_dataset(
         live_mode=True,
         s_item=sync_item,
         ds_info=ds_info,
-        dataset_manifest=dataset_manifest
+        sync_record=sync_record
     )
     
     # Assert
@@ -325,13 +333,18 @@ def test_case_3_dataset_present_remotely_not_locally(
         assert local_dataset.creator == ds_info.creator
     
     # Verify that entries have been added to the log of the dataset_manifest
-    logs = dataset_manifest.get_logs()
-    print(logs)
-    assert len(logs) >= 4
-    assert "Creating or updating dataset" in logs[0]
-    assert "Dataset record found on remote server" in logs[1]
-    assert "Dataset record updated on remote server" in logs[2]
-    assert "Dataset record created on local server" in logs[3]
+    sync_record_dict = sync_record.to_dict()
+    logs = sync_record_dict['logs']
+
+    assert len(logs) == 1
+    task = logs[0]
+    assert "Creating or updating dataset on remote server" in task['name']
+    assert len(task['content']) == 4
+    log_items = task['content']
+    assert "Dataset record found on remote server" in log_items[0]['message']
+    assert "Dataset record updated on remote server" in log_items[1]['message']
+    assert "Dataset record created on local server" in log_items[2]['message']
+    assert "Dataset record found on local server, no update needed" in log_items[3]['message']
 
 def test_case_4_dataset_present_locally_and_remotely(
     session_etiket_client, 
@@ -389,7 +402,7 @@ def test_case_4_dataset_present_locally_and_remotely(
         syncPriority=1.0,
         synchronized=False,
         attempts=0,
-        manifest={},
+        sync_record={},
         error=None,
         traceback=None
     )
@@ -408,14 +421,14 @@ def test_case_4_dataset_present_locally_and_remotely(
         creator="test_user"
     )
     
-    dataset_manifest = DatasetManifest(sync_item=sync_item, dataset_path=None)
+    sync_record = SyncRecordManager(sync_item=sync_item, dataset_path=None)
     
     # Act
     sync_utilities.create_or_update_dataset(
         live_mode=True,
         s_item=sync_item,
         ds_info=ds_info,
-        dataset_manifest=dataset_manifest
+        sync_record=sync_record
     )
     
     # Assert
@@ -446,13 +459,18 @@ def test_case_4_dataset_present_locally_and_remotely(
         assert local_dataset.creator == ds_info.creator
     
     # Verify that entries have been added to the log of the dataset_manifest
-    logs = dataset_manifest.get_logs()
-    assert len(logs) >= 5
-    assert "Creating or updating dataset" in logs[0]
-    assert "Dataset record found on remote server" in logs[1]
-    assert "Dataset record updated on remote server" in logs[2]
-    assert "Dataset record found on local server" in logs[3] 
-    assert "Dataset record updated on local server" in logs[4]
+    sync_record_dict = sync_record.to_dict()
+    logs = sync_record_dict['logs']
+    print(logs)
+    assert len(logs) == 1
+    task = logs[0]
+    assert "Creating or updating dataset on remote server" in task['name']
+    assert len(task['content']) == 4
+    log_items = task['content']
+    assert "Dataset record found on remote server (by uuid)" in log_items[0]['message']
+    assert "Dataset record updated on remote server" in log_items[1]['message']
+    assert "Dataset record found on local server (Live Dataset)." in log_items[2]['message']
+    assert "Dataset record updated on local server" in log_items[3]['message']
 
 def test_case_5_local_dataset_with_same_alt_uid(
     session_etiket_client,
@@ -496,7 +514,7 @@ def test_case_5_local_dataset_with_same_alt_uid(
             syncPriority=1.0,
             synchronized=False,
             attempts=0,
-            manifest={},
+            sync_record={},
             error=None,
             traceback=None
         )
@@ -518,14 +536,14 @@ def test_case_5_local_dataset_with_same_alt_uid(
         creator="test_user"
     )
     
-    dataset_manifest = DatasetManifest(sync_item=sync_item, dataset_path=None)
+    sync_record = SyncRecordManager(sync_item=sync_item, dataset_path=None)
     
     # Act
     sync_utilities.create_or_update_dataset(
         live_mode=True,
         s_item=sync_item,
         ds_info=ds_info,
-        dataset_manifest=dataset_manifest
+        sync_record=sync_record
     )
     
     # Assert
@@ -551,13 +569,17 @@ def test_case_5_local_dataset_with_same_alt_uid(
         assert local_dataset.alt_uid == ds_info.alt_uid
     
     # Verify that entries have been added to the log of the dataset_manifest
-    logs = dataset_manifest.get_logs()
-    assert len(logs) >= 4
-    assert "Creating or updating dataset" in logs[0]
-    assert "Found alt_uid in a dataset on the local server, updating uuid ..." in logs[1]
-    assert "Dataset record created on remote server" in logs[2]
-    assert "Dataset record found on local server" in logs[3]
-    assert "Dataset record updated on local server" in logs[4]
+    sync_record_dict = sync_record.to_dict()
+    logs = sync_record_dict['logs']
+    assert len(logs) == 1
+    task = logs[0]
+    assert "Creating or updating dataset on remote server" in task['name']
+    assert len(task['content']) == 4
+    log_items = task['content']
+    assert "Found alt_uid in a dataset on the local server" in log_items[0]['message']
+    assert "Dataset record created on remote server" in log_items[1]['message']
+    assert "Dataset record found on local server (Live Dataset)." in log_items[2]['message']
+    assert "Dataset record updated on local server" in log_items[3]['message']
 
 def test_case_6_remote_dataset_with_same_alt_uid(
     session_etiket_client, 
@@ -599,7 +621,7 @@ def test_case_6_remote_dataset_with_same_alt_uid(
         syncPriority=1.0,
         synchronized=False,
         attempts=0,
-        manifest={},
+        sync_record={},
         error=None,
         traceback=None
     )
@@ -622,14 +644,14 @@ def test_case_6_remote_dataset_with_same_alt_uid(
         creator="test_user"
     )
     
-    dataset_manifest = DatasetManifest(sync_item=sync_item, dataset_path=None)
+    sync_record = SyncRecordManager(sync_item=sync_item, dataset_path=None)
     
     # Act
     sync_utilities.create_or_update_dataset(
         live_mode=True,
         s_item=sync_item,
         ds_info=ds_info,
-        dataset_manifest=dataset_manifest
+        sync_record=sync_record
     )
     
     # Assert
@@ -664,10 +686,15 @@ def test_case_6_remote_dataset_with_same_alt_uid(
             dao_dataset.read(sync_item_uuid, session=session)
     
     # Verify that entries have been added to the log of the dataset_manifest
-    logs = dataset_manifest.get_logs()
-    assert len(logs) >= 5
-    assert "Creating or updating dataset" in logs[0]
-    assert "Dataset record found on remote server (by alt_uid), updating uuid to match the one on the remote server." in logs[1]
-    assert "Dataset record updated on remote server" in logs[2]
-    assert "Dataset record created on local server" in logs[3]
-    assert "Dataset record found on local server, no update needed." in logs[4]
+    sync_record_dict = sync_record.to_dict()
+    logs = sync_record_dict['logs']
+    print(logs)
+    assert len(logs) == 1
+    task = logs[0]
+    assert "Creating or updating dataset on remote server" in task['name']
+    assert len(task['content']) == 4
+    log_items = task['content']
+    assert "Dataset record found on remote server" in log_items[0]['message']
+    assert "Dataset record updated on remote server" in log_items[1]['message']
+    assert "Dataset record created on local server" in log_items[2]['message']
+    assert "Dataset record found on local server, no update needed" in log_items[3]['message']

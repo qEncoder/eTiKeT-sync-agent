@@ -4,7 +4,7 @@ from typing import Type, List
 from pathlib import Path
 
 from etiket_sync_agent.models.sync_items import SyncItems
-from etiket_sync_agent.backends.dataset_manifest import DatasetManifest
+from etiket_sync_agent.sync.sync_records.manager import SyncRecordManager
 
 class SyncSourceBase(ABC):
     @property
@@ -34,12 +34,12 @@ class SyncSourceBase(ABC):
     
     @staticmethod
     @abstractmethod
-    def syncDatasetNormal(configData: Type[dataclass], syncIdentifier: SyncItems, dataset_manifest: DatasetManifest):
+    def syncDatasetNormal(configData: Type[dataclass], syncIdentifier: SyncItems, sync_record: SyncRecordManager):
         pass
     
     @staticmethod
     @abstractmethod
-    def syncDatasetLive(configData: Type[dataclass], syncIdentifier: SyncItems, dataset_manifest: DatasetManifest):
+    def syncDatasetLive(configData: Type[dataclass], syncIdentifier: SyncItems, sync_record: SyncRecordManager):
         pass
 
 class SyncSourceFileBase(SyncSourceBase):

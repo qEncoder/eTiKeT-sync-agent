@@ -52,7 +52,7 @@ def upgrade() -> None:
     sa.Column('syncPriority', sa.Float(), nullable=False),
     sa.Column('synchronized', sa.Boolean(), nullable=False),
     sa.Column('attempts', sa.Integer(), nullable=False),
-    sa.Column('manifest', sa.JSON(), nullable=True),
+    sa.Column('sync_record', sa.JSON(), nullable=True),
     sa.Column('error', sa.String(), nullable=True),
     sa.Column('traceback', sa.Text(), nullable=True),
     sa.Column('last_update', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),

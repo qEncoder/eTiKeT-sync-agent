@@ -14,6 +14,7 @@ from etiket_client.remote.api_tokens import api_token_session
 from etiket_client.remote.endpoints.models.types import FileType
 from etiket_sync_agent.backends.native.sync_agent import run_native_sync
 from etiket_sync_agent.sync.manifest_mgr import manifest_manager
+from etiket_sync_agent.sync.sync_records.manager import SyncRecordManager
 from etiket_sync_agent.sync.sync_source_abstract import SyncSourceDatabaseBase, SyncSourceFileBase
 from etiket_sync_agent.crud.sync_items import crud_sync_items
 from etiket_sync_agent.crud.sync_sources import crud_sync_sources
@@ -25,7 +26,6 @@ from etiket_sync_agent.models.sync_items import SyncItems
 from etiket_sync_agent.models.sync_sources import SyncSources, SyncSourceTypes
 from etiket_sync_agent.backends.sources import get_source_sync_class
 from etiket_sync_agent.backends.native.sync_scopes import sync_scopes
-from etiket_sync_agent.backends.dataset_manifest import DatasetManifest
 
 from etiket_client.remote.utility import check_internet_connection
 from etiket_client.local.database import Session 
@@ -246,24 +246,24 @@ def sync_dataset(sync_source : SyncSources, s_item : SyncItems, liveDS : bool) -
         bool: True if the sync was successful, False otherwise.
     '''
     if sync_source.sync_class.type == SyncSourceTypes.fileBase:
-        dataset_manifest = DatasetManifest(s_item, Path(s_item.dataIdentifier))
+        sync_record = SyncRecordManager(s_item, Path(s_item.dataIdentifier))
     else:
-        dataset_manifest = DatasetManifest(s_item)
+        sync_record = SyncRecordManager(s_item)
     
     if liveDS:
-        dataset_manifest.add_log("Start of sync (normal)")
+        sync_record.add_log("Start of sync (normal)")
     else:
-        dataset_manifest.add_log("Start of sync (live)")
+        sync_record.add_log("Start of sync (live)")
     
     try:
         if liveDS:
-            sync_source.sync_class.syncDatasetLive(sync_source.sync_config, s_item, dataset_manifest)
+            sync_source.sync_class.syncDatasetLive(sync_source.sync_config, s_item, sync_record)
         elif issubclass(sync_source.sync_class, SyncSourceDatabaseBase):
-            sync_source.sync_class.syncDatasetNormal(sync_source.sync_config, s_item, dataset_manifest)
+            sync_source.sync_class.syncDatasetNormal(sync_source.sync_config, s_item, sync_record)
         else:
             manifest_mgr = manifest_manager(sync_source.name)
             manifest_before =  manifest_mgr.get_last_change(s_item.dataIdentifier)
-            sync_source.sync_class.syncDatasetNormal(sync_source.sync_config, s_item, dataset_manifest)
+            sync_source.sync_class.syncDatasetNormal(sync_source.sync_config, s_item, sync_record)
             manifest_after = manifest_mgr.get_last_change(s_item.dataIdentifier)
             if manifest_before != manifest_after:
                 manifest_mgr.push_update(s_item.dataIdentifier, manifest_after)
@@ -271,15 +271,14 @@ def sync_dataset(sync_source : SyncSources, s_item : SyncItems, liveDS : bool) -
         raise e
     except Exception as e:
         # any error should be reported in the manifest.
-        dataset_manifest.add_error(e)
+        sync_record.add_error("failed to synchronize dataset with error", e)
 
-    if dataset_manifest.has_errors():
-        dataset_manifest.add_log(f"Sync finished (live={liveDS}) with errors")
+    if sync_record.has_errors():
+        sync_record.add_log(f"Sync finished (live={liveDS}) with errors")
     else:
-        dataset_manifest.add_log(f"Sync finished (live={liveDS}) successfully")
-    dataset_manifest.write()
+        sync_record.add_log(f"Sync finished (live={liveDS}) successfully")
 
-    if dataset_manifest.has_errors():
+    if sync_record.has_errors():
         return False
     return True
 

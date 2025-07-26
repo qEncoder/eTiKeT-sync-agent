@@ -100,8 +100,8 @@ from etiket_client.remote.endpoints.file import file_create, file_read_by_name, 
 from etiket_client.remote.endpoints.models.types import FileStatusRem, FileStatusLocal, FileType
 
 from etiket_sync_agent.sync.sync_utilities import sync_utilities, file_info
+from etiket_sync_agent.sync.sync_records.manager import SyncRecordManager
 from etiket_sync_agent.models.sync_items import SyncItems
-from etiket_sync_agent.backends.dataset_manifest import DatasetManifest
 from etiket_sync_agent.sync.uploader.file_uploader import upload_new_file_single
 from etiket_sync_agent.sync.checksums.any import md5
 from etiket_sync_agent.sync.checksums.hdf5 import md5_netcdf4
@@ -137,6 +137,7 @@ class LocalFileConfig:
             filename=os.path.basename(file_path),
             uuid=file_uuid,
             creator="test_user",
+
             collected=datetime.datetime.now(),
             size=os.path.getsize(file_path),
             type=file_type,
@@ -406,7 +407,7 @@ def test_file_upload_case_1(
             syncPriority=1.0,
             synchronized=False,
             attempts=0,
-            manifest={},
+            sync_record={},
             error=None,
             traceback=None
         )
@@ -444,7 +445,7 @@ def test_file_upload_case_1(
         )
         
         # Create dataset manifest
-        dataset_manifest = DatasetManifest(sync_item=sync_item, dataset_path=None)
+        sync_record = SyncRecordManager(sync_item=sync_item, dataset_path=None)
         
         # Record initial state for comparison
         initial_remote_files = []
@@ -461,7 +462,7 @@ def test_file_upload_case_1(
             pass
         
         # Act - Call the upload_file method
-        sync_utilities.upload_file(test_file_path, sync_item, f_info, dataset_manifest)
+        sync_utilities.upload_file(test_file_path, sync_item, f_info, sync_record)
         # Verify results based on expected_version_id
         final_remote_files = []
         try:
@@ -838,7 +839,7 @@ def test_file_upload_case_2_dual(
             syncPriority=1.0,
             synchronized=False,
             attempts=0,
-            manifest={},
+            sync_record={},
             error=None,
             traceback=None
         )
@@ -888,7 +889,7 @@ def test_file_upload_case_2_dual(
         )
         
         # Create dataset manifest
-        dataset_manifest = DatasetManifest(sync_item=sync_item, dataset_path=None)
+        sync_record = SyncRecordManager(sync_item=sync_item, dataset_path=None)
         
         # Record initial state for comparison
         initial_remote_files = []
@@ -906,7 +907,7 @@ def test_file_upload_case_2_dual(
         print(dataset_uuid, file_name)
         
         # Act - Call the upload_file method
-        sync_utilities.upload_file(test_file_path, sync_item, f_info, dataset_manifest)
+        sync_utilities.upload_file(test_file_path, sync_item, f_info, sync_record)
         
         # Verify results
         final_remote_files = []
