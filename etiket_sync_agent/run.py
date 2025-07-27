@@ -12,7 +12,6 @@ from etiket_client.local.exceptions import DatasetNotFoundException
 from etiket_client.remote.client import client, user_settings
 from etiket_client.remote.api_tokens import api_token_session
 from etiket_client.remote.endpoints.models.types import FileType
-from etiket_sync_agent.backends.native.sync_agent import run_native_sync
 from etiket_sync_agent.sync.manifest_mgr import manifest_manager
 from etiket_sync_agent.sync.sync_records.manager import SyncRecordManager
 from etiket_sync_agent.sync.sync_source_abstract import SyncSourceDatabaseBase, SyncSourceFileBase
@@ -24,7 +23,9 @@ from etiket_sync_agent.crud.manifest import crud_manifest
 from etiket_sync_agent.models.enums import SyncSourceStatus, SyncStatus
 from etiket_sync_agent.models.sync_items import SyncItems
 from etiket_sync_agent.models.sync_sources import SyncSources, SyncSourceTypes
-from etiket_sync_agent.backends.sources import get_source_sync_class
+from etiket_sync_agent.db import get_db_session_context
+
+from etiket_sync_agent.backends.sources import get_source_sync_class, init_sync_sources
 from etiket_sync_agent.backends.native.sync_scopes import sync_scopes
 
 from etiket_client.remote.utility import check_internet_connection
@@ -66,54 +67,47 @@ def sync_loop():
     last_sync_time = 0
     running = True
     
-    while running == True:
-        with Session() as session:
-            status = crud_sync_status.get_or_create_status(session)
-            if status.status == SyncStatus.STOPPED:
-                print("is stopped")
-                time.sleep(1) #check again in 1 second
-                continue
-            
-            try:
-                current_time = time.time()
-                # try to use API token for this (more robust)
-                with api_token_session(user_settings.user_sub):
-                    if current_time - last_sync_time >= SyncConf.USER_CHECK_INTERVAL:
-                        client.check_user_session()
-                    if current_time - last_sync_time >= SyncConf.SCOPE_SYNC_INTERVAL:
-                        sync_scopes(session)
-                    if current_time - last_sync_time >= SyncConf.DELETE_HDF5_CACHE_INTERVAL:
-                        dao_file_delete_queue.clean_files(session)
-                    last_sync_time = current_time
-                    # assuming when getting here, the sync is running.
-                    crud_sync_status.update_status(session, SyncStatus.RUNNING)
-                    run_sync_iter(session)
-            except NoLoginInfoFoundException:
-                logger.info("No access token found, waiting for 10 seconds.")
-                time.sleep(10)
-                crud_sync_status.update_status(session, SyncStatus.NOT_LOGGED_IN)
-            except Exception as e:
-                if check_internet_connection() == True:
-                    crud_sync_status.update_status(session, SyncStatus.ERROR, str(e))
-                    logger.exception('Sync loop broken!')
-                    time.sleep(SyncConf.IDLE_DELAY)
-                else:
-                    crud_sync_status.update_status(session, SyncStatus.NO_CONNECTION)
-                    logger.warning("No connection, waiting for 60 seconds.")
-                time.sleep(SyncConf.CONNECTION_ERROR_DELAY)
-
-def run_sync_iter(session):
-    n_syncs = 0
-    sync_sources = crud_sync_sources.list_sync_sources(session)
+    init_sync_sources()
     
-    try:
-        logger.info("Syncing native datasets")
-        items_synced = run_native_sync(session)
-        n_syncs += items_synced
-    except CONNECTION_ERRORS as e:
-        raise e
-    except Exception:
-        logger.exception("Failed to sync native datasets")
+    while running == True:
+        with get_db_session_context() as session_sync:
+            with Session() as session_etiket:
+                status = crud_sync_status.get_or_create_status(session_sync)
+                if status.status == SyncStatus.STOPPED:
+                    time.sleep(1) #check again in 1 second
+                    continue
+                
+                try:
+                    current_time = time.time()
+                    # try to use API token for this (more robust)
+                    with api_token_session(user_settings.user_sub):
+                        if current_time - last_sync_time >= SyncConf.USER_CHECK_INTERVAL:
+                            client.check_user_session()
+                        if current_time - last_sync_time >= SyncConf.SCOPE_SYNC_INTERVAL:
+                            sync_scopes(session_etiket)
+                        if current_time - last_sync_time >= SyncConf.DELETE_HDF5_CACHE_INTERVAL:
+                            dao_file_delete_queue.clean_files(session_etiket)
+                        last_sync_time = current_time
+                        # assuming when getting here, the sync is running.
+                        crud_sync_status.update_status(session_sync, SyncStatus.RUNNING)
+                        run_sync_iter(session_sync, session_etiket)
+                except NoLoginInfoFoundException:
+                    logger.info("No access token found, waiting for 10 seconds.")
+                    time.sleep(10)
+                    crud_sync_status.update_status(session_sync, SyncStatus.NOT_LOGGED_IN)
+                except Exception as e:
+                    if check_internet_connection() == True:
+                        crud_sync_status.update_status(session_sync, SyncStatus.ERROR, str(e))
+                        logger.exception('Sync loop broken!')
+                        time.sleep(SyncConf.IDLE_DELAY)
+                    else:
+                        crud_sync_status.update_status(session_sync, SyncStatus.NO_CONNECTION)
+                        logger.warning("No connection, waiting for 60 seconds.")
+                    time.sleep(SyncConf.CONNECTION_ERROR_DELAY)
+
+def run_sync_iter(session_sync, session_etiket):
+    n_syncs = 0
+    sync_sources = crud_sync_sources.list_sync_sources(session_sync)
 
     for sync_source in sync_sources:
         if sync_source.status == SyncSourceStatus.PAUSED:
@@ -132,33 +126,33 @@ def run_sync_iter(session):
                 
                 # check if new sync items are available (i.e. new datasets)
                 try:
-                    get_new_sync_items(sync_source, sync_cls, session)
+                    get_new_sync_items(sync_source, sync_cls, session_sync)
                 except Exception as e :
                     # TODO write error to sync source.
-                    crud_sync_sources.update_sync_source(session, sync_source.id, status=SyncSourceStatus.ERROR)
+                    crud_sync_sources.update_sync_source(session_sync, sync_source.id, status=SyncSourceStatus.ERROR)
                     raise e
                 
                 # check if there is a new item to sync, determine if it is a live dataset.
-                s_item = crud_sync_items.read_next_sync_item(session, sync_source.id, offset = 0)
+                s_item = crud_sync_items.read_next_sync_item(session_sync, sync_source.id, offset = 0)
                 
                 if s_item is not None:
-                    last_s_item = crud_sync_items.get_last_sync_item(session, s_item.sync_source_id)
+                    last_s_item = crud_sync_items.get_last_sync_item(session_sync, s_item.sync_source_id)
                     liveDS = sync_cls.checkLiveDataset(sync_source.sync_config, s_item, last_s_item.id==s_item.id)
                     
                     # this is needed to not get stuck in a loop of live datasets (though not the cleanest way)
-                    liveDS_already_tried = check_live_DS_already_tried(s_item, session)
+                    liveDS_already_tried = check_live_DS_already_tried(s_item, session_etiket)
                     if (liveDS is True) and (sync_source.sync_class.LiveSyncImplemented is False or liveDS_already_tried):
                         # assume only one live dataset at a time.
-                        s_item = crud_sync_items.read_next_sync_item(session, sync_source.id, offset = 1)
+                        s_item = crud_sync_items.read_next_sync_item(session_sync, sync_source.id, offset = 1)
                         liveDS = False
                 
                 if s_item is None:
-                    crud_sync_sources.update_sync_source(session, sync_source.id,
+                    crud_sync_sources.update_sync_source(session_sync, sync_source.id,
                                                             status=SyncSourceStatus.SYNCHRONIZED)
                     logger.info("No new items to sync from %s.", sync_source.name)
                     continue
                 
-                crud_sync_sources.update_sync_source(session, sync_source.id,
+                crud_sync_sources.update_sync_source(session_sync, sync_source.id,
                                                             status=SyncSourceStatus.SYNCHRONIZING)
                 
                 if liveDS is True:
@@ -171,11 +165,11 @@ def run_sync_iter(session):
                 success = sync_dataset(sync_source, s_item, False)
                 
                 try: # remove any dataset caches:
-                    dataset_local = dao_dataset.read(s_item.datasetUUID, session)
+                    dataset_local = dao_dataset.read(s_item.datasetUUID, session_etiket)
                     for file in dataset_local.files or []:
                         if file.type == FileType.HDF5_CACHE:
                             fs = FileSelect(uuid=file.uuid, version_id=file.version_id)
-                            dao_file.delete(fs, session)
+                            dao_file.delete(fs, session_etiket)
                 except DatasetNotFoundException:
                     pass
                 
@@ -183,17 +177,17 @@ def run_sync_iter(session):
                     n_syncs += 1
                     logger.info("Synced %s from %s.", s_item.dataIdentifier, sync_source.name)
 
-                    crud_sync_items.update_sync_item(session, s_item.id, synchronized=True)
-                    crud_sync_sources.update_sync_source(session, sync_source.id,
+                    crud_sync_items.update_sync_item(session_sync, s_item.id, synchronized=True)
+                    crud_sync_sources.update_sync_source(session_sync, sync_source.id,
                                                         status=SyncSourceStatus.SYNCHRONIZING)
                 else:
                     logger.exception("Failed to synchronize %s from %s.", s_item.dataIdentifier, sync_source.name)
-                    crud_sync_items.update_sync_item(session, s_item.id, attempts=s_item.attempts+1)
-                    crud_sync_sources.update_sync_source(session, sync_source.id,
+                    crud_sync_items.update_sync_item(session_sync, s_item.id, attempts=s_item.attempts+1)
+                    crud_sync_sources.update_sync_source(session_sync, sync_source.id,
                                                         status=SyncSourceStatus.SYNCHRONIZING,
                                                         update_statistics=True)
             except CONNECTION_ERRORS as e:
-                crud_sync_sources.update_sync_source(session, sync_source.id,
+                crud_sync_sources.update_sync_source(session_sync, sync_source.id,
                                                         status=SyncSourceStatus.ERROR)
                 raise e
             except Exception:
@@ -208,7 +202,7 @@ def get_new_sync_items(sync_source : SyncSources, sync_cls : Type[SyncSourceData
     Args:
         sync_source (SyncSources): The sync source object.
         sync_cls (Type[SyncSourceDatabaseBase] | Type[SyncSourceFileBase]): The sync class object.
-        session (Session): The database session object.
+        session (Session): The database session object to the sync database
         
     Returns:
         None
@@ -282,9 +276,9 @@ def sync_dataset(sync_source : SyncSources, s_item : SyncItems, liveDS : bool) -
         return False
     return True
 
-def check_live_DS_already_tried(s_item : SyncItems, session):
+def check_live_DS_already_tried(s_item : SyncItems, session_etiket):
     try:
-        dataset = dao_dataset.read(s_item.datasetUUID, session)
+        dataset = dao_dataset.read(s_item.datasetUUID, session_etiket)
         for file in dataset.files or []:
             if file.type == FileType.HDF5_CACHE:
                 return True

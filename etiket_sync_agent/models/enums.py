@@ -7,6 +7,7 @@ class SyncSourceStatus(str, enum.Enum):
     PAUSED = "paused"
     
 class SyncSourceTypes(str, enum.Enum):
+    native = "native"
     coretools = "Core-tools"
     qcodes = "qCoDeS"
     quantify = "quantify"
