@@ -75,7 +75,7 @@ def test_sync_loop_stopped_status_does_nothing(db_session: Session):
         assert final_status.status == SyncStatus.STOPPED
 
 
-def test_sync_loop_running_status_does_something(db_session: Session):
+def test_sync_loop_running_status_does_something(db_session: Session, session_etiket_client: Session):
     """
     Test 1.2: Set the sync status to running, check if the sync is indeed doing something when running the loop.
     """
@@ -92,7 +92,8 @@ def test_sync_loop_running_status_does_something(db_session: Session):
             patch('etiket_sync_agent.run.sync_scopes') as mock_sync_scopes, \
             patch('etiket_sync_agent.run.dao_file_delete_queue.clean_files') as mock_clean_files, \
             patch('etiket_sync_agent.run.run_sync_iter') as mock_run_sync_iter, \
-            patch('etiket_sync_agent.run.Session') as mock_session_cls, \
+            patch('etiket_sync_agent.run.get_db_session_context') as mock_session_cls, \
+            patch('etiket_sync_agent.run.Session') as mock_session_etiket_client, \
             patch('etiket_sync_agent.run.user_settings') as mock_user_settings, \
             patch('etiket_sync_agent.run.SyncConf') as mock_sync_conf:
         
@@ -106,6 +107,9 @@ def test_sync_loop_running_status_does_something(db_session: Session):
         # Mock the Session context manager to return our test session
         mock_session_cls.return_value.__enter__.return_value = db_session
         mock_session_cls.return_value.__exit__.return_value = None
+        
+        mock_session_etiket_client.return_value.__enter__.return_value = session_etiket_client
+        mock_session_etiket_client.return_value.__exit__.return_value = None
         
         # Mock user_settings.user_sub
         mock_user_settings.user_sub = "test_user"
@@ -121,20 +125,17 @@ def test_sync_loop_running_status_does_something(db_session: Session):
             mock_time += 0.2  # Increment by 200ms to trigger all intervals
             return mock_time
         
-        # Set up a flag to stop the loop after a few iterations
-        loop_iterations = 0
-        original_sleep = time.sleep
-        
-        def mock_sleep(duration):
-            nonlocal loop_iterations
-            loop_iterations += 1
-            # Stop after 2 iterations to prevent infinite loop
-            if loop_iterations >= 2:
+        # Stop the loop by raising KeyboardInterrupt after two sync iterations
+        call_count = 0
+        def run_iter_side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count >= 2:
                 raise KeyboardInterrupt("Test completed")
-            original_sleep(0.01)  # Small sleep to prevent busy waiting
-        
-        with patch('time.time', side_effect=mock_time_func), \
-                patch('time.sleep', side_effect=mock_sleep):
+
+        mock_run_sync_iter.side_effect = run_iter_side_effect
+
+        with patch('time.time', side_effect=mock_time_func):
             try:
                 sync_loop()
             except KeyboardInterrupt:
@@ -143,12 +144,12 @@ def test_sync_loop_running_status_does_something(db_session: Session):
         # Verify that sync functions WERE called
         mock_api_token.assert_called()
         mock_check_user.assert_called()
-        mock_sync_scopes.assert_called_with(db_session)
-        mock_clean_files.assert_called_with(db_session)
-        mock_run_sync_iter.assert_called_with(db_session)
+        mock_sync_scopes.assert_called_with(session_etiket_client)
+        mock_clean_files.assert_called_with(session_etiket_client)
+        mock_run_sync_iter.assert_called_with(db_session, session_etiket_client)
         
         # Verify we had at least a couple iterations (confirming the loop was running)
-        assert loop_iterations >= 2
+        assert mock_run_sync_iter.call_count >= 2
         
         # Verify the status was updated to RUNNING during the sync process
         # (The sync_loop should call crud_sync_status.update_status with RUNNING)
