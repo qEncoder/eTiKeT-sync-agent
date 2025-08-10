@@ -358,7 +358,7 @@ def test_update_sync_item(db_session: Session, sync_source_id: int):
             dataset_uuid=new_uuid,
             sync_priority=7.0,
             attempts=0,
-            manifest=new_manifest,
+            sync_record=new_manifest,
             error="Test Error",
             traceback="Test Traceback",
             synchronized=True
@@ -367,7 +367,7 @@ def test_update_sync_item(db_session: Session, sync_source_id: int):
         assert item_data.datasetUUID == new_uuid
         assert item_data.syncPriority == 7.0
         assert item_data.attempts == 0
-        assert item_data.manifest == new_manifest
+        assert item_data.sync_record == new_manifest
         assert item_data.error == "Test Error"
         assert item_data.traceback == "Test Traceback"
         assert item_data.synchronized is True

@@ -10,6 +10,7 @@ from sqlalchemy.sql.functions import count as sql_count, sum as sql_sum
 from etiket_sync_agent.models.enums import SyncSourceTypes, SyncSourceStatus
 from etiket_sync_agent.models.sync_sources import SyncSources
 from etiket_sync_agent.models.sync_items import SyncItems
+from etiket_sync_agent.db import get_db_session_context
 
 from etiket_sync_agent.backends.sources import get_source_config_class, get_source_sync_class
 
@@ -157,6 +158,15 @@ def validate_config_data(config_data : dict, sync_source_type : SyncSourceTypes,
     except Exception as e:
         # Raise custom exception, wrapping the original one
         raise SyncSourceConfigDataValidationError(message=str(e), original_exception=e) from e
-    
+
+def init_sync_sources():
+    with get_db_session_context() as session:
+        sync_sources = crud_sync_sources.list_sync_sources(session)
+        n_sources = 0
+        for sync_source in sync_sources:
+            if sync_source.type == SyncSourceTypes.native:
+                n_sources+=1
+        if n_sources == 0:
+            crud_sync_sources.create_sync_source(session, 'QH datasets', SyncSourceTypes.native, {})
 
 crud_sync_sources = CRUD_sync_sources()

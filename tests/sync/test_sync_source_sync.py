@@ -36,7 +36,6 @@ def test_sync_loop_stopped_status_does_nothing(db_session: Session):
             patch('etiket_sync_agent.run.sync_scopes') as mock_sync_scopes, \
             patch('etiket_sync_agent.run.dao_file_delete_queue.clean_files') as mock_clean_files, \
             patch('etiket_sync_agent.run.run_sync_iter') as mock_run_sync_iter, \
-            patch('etiket_sync_agent.run.run_native_sync') as mock_run_native_sync, \
             patch('etiket_sync_agent.run.Session') as mock_session_cls:
         
         # Mock the Session context manager to return our test session
@@ -67,7 +66,6 @@ def test_sync_loop_stopped_status_does_nothing(db_session: Session):
         mock_sync_scopes.assert_not_called()
         mock_clean_files.assert_not_called()
         mock_run_sync_iter.assert_not_called()
-        mock_run_native_sync.assert_not_called()
         
         # Verify we had at least a few iterations (confirming the loop was running)
         assert loop_iterations >= 3
@@ -94,7 +92,6 @@ def test_sync_loop_running_status_does_something(db_session: Session):
             patch('etiket_sync_agent.run.sync_scopes') as mock_sync_scopes, \
             patch('etiket_sync_agent.run.dao_file_delete_queue.clean_files') as mock_clean_files, \
             patch('etiket_sync_agent.run.run_sync_iter') as mock_run_sync_iter, \
-            patch('etiket_sync_agent.run.run_native_sync') as mock_run_native_sync, \
             patch('etiket_sync_agent.run.Session') as mock_session_cls, \
             patch('etiket_sync_agent.run.user_settings') as mock_user_settings, \
             patch('etiket_sync_agent.run.SyncConf') as mock_sync_conf:

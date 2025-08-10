@@ -116,7 +116,7 @@ class SyncItemsCrud:
                             dataset_uuid : Optional[uuid.UUID] = None,
                             sync_priority : Optional[float] = None,
                             attempts : Optional[int] = None,
-                            manifest : Optional[Dict] = None,
+                            sync_record : Optional[Dict] = None,
                             error : Optional[str]= None,
                             traceback : Optional[str]= None,
                             synchronized : Optional[bool] = None) -> SyncItems:
@@ -133,8 +133,8 @@ class SyncItemsCrud:
         if attempts is not None:
             update_stmt = update_stmt.values(attempts = attempts)
         
-        if manifest is not None:
-            update_stmt = update_stmt.values(manifest = manifest)
+        if sync_record is not None:
+            update_stmt = update_stmt.values(sync_record = sync_record)
         
         if error is not None:
             update_stmt = update_stmt.values(error = error)

@@ -16,7 +16,7 @@ from etiket_sync_agent.sync.manifest_mgr import manifest_manager
 from etiket_sync_agent.sync.sync_records.manager import SyncRecordManager
 from etiket_sync_agent.sync.sync_source_abstract import SyncSourceDatabaseBase, SyncSourceFileBase
 from etiket_sync_agent.crud.sync_items import crud_sync_items
-from etiket_sync_agent.crud.sync_sources import crud_sync_sources
+from etiket_sync_agent.crud.sync_sources import crud_sync_sources, init_sync_sources
 from etiket_sync_agent.crud.sync_status import crud_sync_status
 from etiket_sync_agent.crud.manifest import crud_manifest
 
@@ -25,7 +25,7 @@ from etiket_sync_agent.models.sync_items import SyncItems
 from etiket_sync_agent.models.sync_sources import SyncSources, SyncSourceTypes
 from etiket_sync_agent.db import get_db_session_context
 
-from etiket_sync_agent.backends.sources import get_source_sync_class, init_sync_sources
+from etiket_sync_agent.backends.sources import get_source_sync_class
 from etiket_sync_agent.backends.native.sync_scopes import sync_scopes
 
 from etiket_client.remote.utility import check_internet_connection

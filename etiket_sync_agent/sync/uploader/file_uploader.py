@@ -52,8 +52,6 @@ def upload_new_file_single(file_raw_name, upload_info: FileSignedUploadLink, md5
                     elif 'ETag' in response.headers:
                         server_md5_etag = response.headers['ETag'].strip('"') # Remove surrounding quotes
                         local_md5_hex = md5_checksum_recalculated.hexdigest()
-                        print("SERVER MD5 ETAG", server_md5_etag)
-                        print("LOCAL  MD5 HEX", local_md5_hex)
                         logger.debug(f"Verifying against server ETag for {file_raw_name}. Server ETag (processed): {server_md5_etag}, Client recalculated hex: {local_md5_hex}")
                         if server_md5_etag.lower() != local_md5_hex.lower(): # Case-insensitive comparison
                             logger.warning(f"ETag mismatch for {file_raw_name}. Server ETag (processed): {server_md5_etag}, Client recalculated hex: {local_md5_hex}")

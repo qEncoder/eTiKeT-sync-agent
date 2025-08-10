@@ -1,12 +1,9 @@
 from typing import Type
 
-from etiket_sync_agent.db import get_db_session_context
-
 from etiket_sync_agent.models.sync_sources import  SyncSourceTypes
 from etiket_sync_agent.models.enums import SyncSourceTypes
 
 from etiket_sync_agent.sync.sync_source_abstract import SyncSourceFileBase, SyncSourceDatabaseBase
-from etiket_sync_agent.crud.sync_sources import crud_sync_sources
 
 def get_mapping() -> tuple[dict[SyncSourceTypes, Type[SyncSourceDatabaseBase]|Type[SyncSourceFileBase]], dict[SyncSourceTypes, Type]]:
     # TODO : This is a temporary solution.
@@ -59,13 +56,3 @@ def get_source_config_class(sync_source_type : SyncSourceTypes) -> Type:
 def get_source_sync_class(sync_source_type : SyncSourceTypes) -> Type[SyncSourceDatabaseBase]|Type[SyncSourceFileBase]:
     type_mapping, _ = get_mapping()
     return type_mapping[sync_source_type]
-
-def init_sync_sources():
-    with get_db_session_context() as session:
-        sync_sources = crud_sync_sources.list_sync_sources(session)
-        n_sources = 0
-        for sync_source in sync_sources:
-            if sync_source.type == SyncSourceTypes.native:
-                n_sources+=1
-        if n_sources == 0:
-            crud_sync_sources.create_sync_source(session, 'QH datasets', SyncSourceTypes.native, {})

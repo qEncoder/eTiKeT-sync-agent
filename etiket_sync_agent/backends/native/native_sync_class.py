@@ -1,9 +1,10 @@
-import typing, uuid
+import typing, uuid, datetime
 
 from etiket_client.local.dao.dataset import dao_dataset, DatasetUpdate as DatasetUpdateLocal
 from etiket_client.local.dao.file import dao_file, FileUpdate as FileUpdateLocal
 from etiket_client.local.database import Session 
 from etiket_client.local.models.file import FileSelect, FileStatusLocal, FileType
+from etiket_client.local.models.dataset import DatasetRead
 
 from etiket_client.local.exceptions import DatasetNotFoundException
 
@@ -11,7 +12,7 @@ from etiket_client.remote.api_tokens import api_token_session
 from etiket_client.remote.endpoints.dataset import dataset_read, dataset_create, dataset_update
 from etiket_client.remote.endpoints.file import file_create, file_generate_presigned_upload_link_single
 
-from etiket_client.remote.endpoints.models.dataset import DatasetCreate, DatasetUpdate
+from etiket_client.remote.endpoints.models.dataset import DatasetCreate, DatasetUpdate, DatasetRead as RemoteDatasetRead
 from etiket_client.remote.endpoints.models.file import FileCreate, FileRead
 from etiket_client.remote.endpoints.models.types import FileStatusRem
 
@@ -36,12 +37,20 @@ class NativeSync(SyncSourceDatabaseBase):
     @staticmethod
     def getNewDatasets(configData: NativeConfigData, lastIdentifier: str | None) -> typing.List[SyncItems]:
         with Session() as session:
-            datasets = dao_dataset.get_sync_items(lastIdentifier, session)
+            lastIdentifier_float = None
+            if lastIdentifier is not None:
+                lastIdentifier_float = float(lastIdentifier)
+            datasets = dao_dataset.get_sync_items(lastIdentifier_float, session)
             sync_items = []
             for dataset in datasets:
+                modified_time = dataset.modified
+                for file in dataset.files:
+                    if file.synchronized is False and file.modified > modified_time:
+                        modified_time = file.modified
+                modified_time_timestamp = modified_time.replace(tzinfo=datetime.timezone.utc).timestamp()
                 sync_item = SyncItems(datasetUUID = dataset.uuid,
                                         dataIdentifier = dataset.uuid,
-                                        sync_priority = dataset.modified)
+                                        syncPriority = modified_time_timestamp)
                 sync_items.append(sync_item)
         return sync_items
 
@@ -75,10 +84,14 @@ class NativeSync(SyncSourceDatabaseBase):
                             sync_record.add_log("Remote dataset created.")
                         else:
                             if dataset_local.modified > dataset_remote.modified:
-                                sync_record.add_log("Updating metadata ...")
-                                du = DatasetUpdate(**dataset_local.model_dump())
-                                dataset_update(dataset_local.uuid, du)
-                                sync_record.add_log("Metadata updated.")
+                                if needs_metadata_update(dataset_local, dataset_remote):
+                                    sync_record.add_log("Updating metadata of remote dataset ...")
+                                    du = DatasetUpdate(**dataset_local.model_dump())
+                                    dataset_update(dataset_local.uuid, du)
+                                    sync_record.add_log("Metadata updated.")
+                                    dataset_remote = dataset_read(dataset_local.uuid)
+                                else:
+                                    sync_record.add_log("Metadata up to date, no updates needed.")
                             else:
                                 sync_record.add_log("Metadata up to date, no updates needed.")
 
@@ -120,15 +133,29 @@ class NativeSync(SyncSourceDatabaseBase):
                                 sync_record.add_log(f"skipping {file.name} (version :: {file.version_id}) as file status is not yet completed (status = {file.status}).")
                             elif file.type == FileType.HDF5_CACHE:
                                 sync_record.add_log(f"skipping {file.name} (version :: {file.version_id}) as file is marked as cache.")
+                            elif file.synchronized is True:
+                                sync_record.add_log(f"skipping {file.name} (version :: {file.version_id}) as file is already synchronized.")
                             else:
-                                raise ValueError("Error the code should not reach here. -- name : {file.name}, file_uuid : {file.uuid}, version_id : {file.version_id}, status : {file.status}, path : {file.local_path}.")
+                                raise ValueError(f"Error the code should not reach here. -- name : {file.name}, file_uuid : {file.uuid}, version_id : {file.version_id}, status : {file.status}, synced : {file.synchronized}")
                     
-                    # check if last modified is the same as before starting!!
-                    dataset_local_updated = dao_dataset.read(syncIdentifier.datasetUUID, session)
-                    
-                    if dataset_local_updated.modified == dataset_local_updated.modified:
+                    # update the local dataset to mark it as synchronized
+                    ds_local_reread = dao_dataset.read(dataset_local.uuid, session)
+                    if ds_local_reread.modified == dataset_local.modified:
                         du = DatasetUpdateLocal(synchronized=True)
-                        dao_dataset.update(dataset_local.uuid, du,session)
+                        if needs_metadata_update(ds_local_reread, dataset_remote):
+                            sync_record.add_log("Updating metadata of local dataset from newer remote ...")
+                            du = DatasetUpdateLocal(
+                                name=dataset_remote.name,
+                                description=dataset_remote.description,
+                                keywords=dataset_remote.keywords,
+                                ranking=dataset_remote.ranking,
+                                attributes=dataset_remote.attributes,
+                                synchronized=True,
+                            )
+                        dao_dataset.update(dataset_local.uuid, du, session)
+                        sync_record.add_log("Local metadata updated from remote and marked as synchronized.")
+                    else:
+                        sync_record.add_log("Not marked as synchronized, as the local dataset was modified during the sync.")
                     
             sync_record.add_log("Dataset sync is successful!")
 
@@ -142,3 +169,31 @@ def get_remote_file(files : typing.List[FileRead], file_uuid : uuid.UUID, versio
         if file.uuid == file_uuid and file.version_id == version_id:
             return file
     return None
+
+
+def datasets_metadata_equal(ds_local: DatasetRead, ds_remote: RemoteDatasetRead) -> bool:
+    """Return True only if all relevant metadata fields match."""
+    if ds_local.uuid != ds_remote.uuid:
+        return False
+    if ds_local.alt_uid != ds_remote.alt_uid:
+        return False
+    if ds_local.collected != ds_remote.collected:
+        return False
+    if ds_local.name != ds_remote.name:
+        return False
+    if ds_local.description != ds_remote.description:
+        return False
+    if ds_local.creator != ds_remote.creator:
+        return False
+    if ds_local.ranking != ds_remote.ranking:
+        return False
+    if ds_local.keywords != ds_remote.keywords:
+        return False
+    if ds_local.attributes != ds_remote.attributes:
+        return False
+    return True
+
+
+def needs_metadata_update(ds_local: DatasetRead, ds_remote: RemoteDatasetRead) -> bool:
+    """Return True if any relevant metadata field differs."""
+    return not datasets_metadata_equal(ds_local, ds_remote)
