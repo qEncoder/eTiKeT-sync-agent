@@ -13,6 +13,7 @@ class SyncStatusRecord(Base):
     __tablename__ = "sync_status"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    sync_iteration_count : Mapped[int] = mapped_column(default=0)
     status: Mapped[SyncStatus]
     last_update: Mapped[datetime] = mapped_column(UtcDateTime, server_default=utcnow(), onupdate=utcnow())
     error_message: Mapped[Optional[str]] = mapped_column(default=None)

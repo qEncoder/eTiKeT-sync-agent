@@ -9,8 +9,9 @@ from etiket_sync_agent.db import DATABASE_URL
 
 def import_all_models(package):
     package = importlib.import_module(package)
+    print(f"Found the following modules in {package.__name__}:")
     for _, module_name, _ in pkgutil.iter_modules(package.__path__):
-        print(f"{package.__name__}.{module_name}")
+        print(f"  {module_name}")
         importlib.import_module(f"{package.__name__}.{module_name}")
 
 import_all_models('etiket_sync_agent.models')

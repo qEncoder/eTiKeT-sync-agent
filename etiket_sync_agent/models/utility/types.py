@@ -1,22 +1,18 @@
-import datetime
-
 from typing import Optional
-from sqlalchemy.types import TypeDecorator, DateTime
+from datetime import datetime, timezone
+from sqlalchemy import DateTime, types
 
-# based on sqlalchemy_utc from pypi.
-
-class UtcDateTime(TypeDecorator):
-    impl = DateTime(timezone=True)
+class UtcDateTime(types.TypeDecorator):
+    impl = DateTime
     cache_ok = True
 
-    def process_bind_param(self, value : Optional[datetime.datetime], dialect):
-        if value is not None:
-            if not isinstance(value, datetime.datetime):
-                raise TypeError('expecting datetime.datetime type')
-            return value.astimezone(datetime.timezone.utc)
-        return value
+    def process_bind_param(self, value : Optional[datetime], dialect):
+        if value is None:
+            return None
+        
+        value = value.astimezone(timezone.utc).replace(tzinfo=None)
+        return value.strftime("%Y-%m-%d %H:%M:%S.%f")
 
-    def process_result_value(self, value : datetime.datetime, dialect):
-        if value is not None:
-            value = value.replace(tzinfo=datetime.timezone.utc)
+    def process_result_value(self, value : datetime, dialect):
+        value = value.replace(tzinfo=timezone.utc)
         return value

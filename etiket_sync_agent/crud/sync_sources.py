@@ -4,11 +4,11 @@ from pathlib import Path
 from typing import List, Optional, Any
 
 from sqlalchemy.orm import Session
-from sqlalchemy import select, update, delete, case
+from sqlalchemy import select, update, delete, case, insert
 from sqlalchemy.sql.functions import count as sql_count, sum as sql_sum
 
 from etiket_sync_agent.models.enums import SyncSourceTypes, SyncSourceStatus
-from etiket_sync_agent.models.sync_sources import SyncSources
+from etiket_sync_agent.models.sync_sources import SyncSources, SyncSourceErrors
 from etiket_sync_agent.models.sync_items import SyncItems
 from etiket_sync_agent.db import get_db_session_context
 
@@ -140,10 +140,34 @@ class CRUD_sync_sources:
         session.execute(stmt)
         session.commit()
 
+        # delete sync source logs
+        stmt = delete(SyncSourceErrors).where(SyncSourceErrors.sync_source_id == source_id)
+        session.execute(stmt)
+        session.commit()
+
         # delete sync source
         stmt = (delete(SyncSources).where(SyncSources.id == source_id))
         session.execute(stmt)
         session.commit()
+        
+    def add_sync_source_error(self, session : Session, sync_source_id : int,
+                            sync_iteration : int,
+                            log_exception : Exception,
+                            log_context : Optional[str] = None,
+                            log_traceback : Optional[str] = None) -> None:   
+        log_exception_str = repr(log_exception)
+        source_log = SyncSourceErrors(sync_source_id = sync_source_id,
+                                        sync_iteration = sync_iteration, 
+                                        log_exception = log_exception_str,
+                                        log_context = log_context,
+                                        log_traceback = log_traceback)
+        session.add(source_log)
+        session.commit()
+    
+    def read_sync_source_errors(self, session : Session, sync_source_id : int, skip : int = 0, limit : int = 100) -> List[SyncSourceErrors]:
+        stmt = select(SyncSourceErrors).where(SyncSourceErrors.sync_source_id == sync_source_id)
+        stmt = stmt.order_by(SyncSourceErrors.log_timestamp.desc()).offset(skip).limit(limit)
+        return session.execute(stmt).scalars().all()
 
 def validate_config_data(config_data : dict, sync_source_type : SyncSourceTypes, current_sync_source : Optional[SyncSources] = None) -> Any:
     cls = get_source_config_class(sync_source_type)

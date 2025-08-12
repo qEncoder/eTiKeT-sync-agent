@@ -3,10 +3,12 @@ import uuid
 from typing import Optional
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, JSON, UniqueConstraint
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import ForeignKey, JSON
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from etiket_sync_agent.models.base import Base
+from etiket_sync_agent.models.types import CompressedStr
+
 from etiket_sync_agent.models.enums import SyncSourceStatus, SyncSourceTypes
 from etiket_sync_agent.models.utility.functions import utcnow
 from etiket_sync_agent.models.utility.types import UtcDateTime
@@ -28,12 +30,17 @@ class SyncSources(Base):
     config_data : Mapped[dict] = mapped_column(JSON)
     
     default_scope : Mapped[Optional[uuid.UUID]]
-
-class SyncScopeMappingsSQL(Base):
-    __tablename__ = "sync_scope_mappings"
-    __table_args__ = (UniqueConstraint('sync_source_id', 'scope_identifier', name='sync_source_did_constraint_scope_mapping'), )
+    
+    errors : Mapped[list["SyncSourceErrors"]] = relationship(cascade="all, delete-orphan")
+    
+class SyncSourceErrors(Base):
+    __tablename__ = "sync_source_errors"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     sync_source_id : Mapped[int] = mapped_column(ForeignKey("sync_sources.id"))
-    scope_identifier : Mapped[str]
-    scope_uuid : Mapped[uuid.UUID]
+    sync_iteration : Mapped[int]
+    log_exception : Mapped[str]
+    log_context   : Mapped[Optional[str]] = mapped_column(nullable=True)
+    log_traceback : Mapped[Optional[str]] = mapped_column(CompressedStr, nullable=True)
+    log_timestamp : Mapped[datetime] = mapped_column(UtcDateTime, server_default=utcnow())
+    

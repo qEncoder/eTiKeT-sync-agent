@@ -41,7 +41,7 @@
 # -- delete the source again, should fail
 # -- cleanup : delete any sources created
 
-import pytest, uuid, dataclasses, time
+import pytest, uuid, dataclasses, time, traceback
 
 from pathlib import Path
 from typing import Optional
@@ -53,7 +53,7 @@ from sqlalchemy import delete
 from etiket_sync_agent.crud.sync_sources import crud_sync_sources
 from etiket_sync_agent.crud.sync_items import crud_sync_items
 from etiket_sync_agent.models.enums import SyncSourceTypes, SyncSourceStatus
-from etiket_sync_agent.models.sync_sources import SyncSources
+from etiket_sync_agent.models.sync_sources import SyncSources, SyncSourceErrors
 from etiket_sync_agent.models.sync_items import SyncItems
 from etiket_sync_agent.backends.qcodes.qcodes_config_class import QCoDeSConfigData
 from etiket_sync_agent.exceptions.CRUD.sync_sources import SyncSourceDefaultScopeRequiredError, SyncSourceNameAlreadyExistsError,\
@@ -92,9 +92,14 @@ def clear_all_sources(session: Session):
     session.execute(stmt)
     session.commit()
     
+    stmt = delete(SyncSourceErrors)
+    session.execute(stmt)
+    session.commit()
+    
     stmt = delete(SyncSources)
     session.execute(stmt)
     session.commit()
+
 
 # Patch the external scope functions for all tests in this module
 @pytest.fixture(autouse=True)
@@ -102,15 +107,12 @@ def mock_scope_calls():
     with patch('etiket_sync_agent.crud.sync_sources.get_scope_by_uuid', side_effect=mock_get_scope_by_uuid) as mock_get_by_uuid, \
         patch('etiket_client.python_api.scopes.get_scopes', side_effect=mock_get_scopes) as mock_get_all: # Assuming get_scopes is needed elsewhere or for completeness
         yield mock_get_by_uuid, mock_get_all
-
-
 class TestSyncSourcesCRUD:
-
     # --- Test 1: create_sync_source ---
     def test_create_qcodes_source_success(self, db_session: Session, qcodes_set_up: Path):
         source_name = f"test_qcodes_create_success_{uuid.uuid4()}"
         config_data = create_valid_qcodes_config(qcodes_set_up, setup="Setup1", extra={"key": "value"})
-        print(config_data)
+
         try:
             source = crud_sync_sources.create_sync_source(
                 session=db_session,
@@ -159,7 +161,6 @@ class TestSyncSourcesCRUD:
     def test_create_source_duplicate_name_fails(self, mock_validate, db_session: Session, qcodes_set_up: Path):
         source_name = f"test_duplicate_{uuid.uuid4()}"
         config_data = create_valid_qcodes_config(qcodes_set_up)
-        print("creating first source with name: ", source_name)
         try:
             # Create first source
             crud_sync_sources.create_sync_source(session=db_session, name=source_name, sync_source_type=SyncSourceTypes.qcodes,
@@ -370,6 +371,127 @@ class TestSyncSourcesCRUD:
 
             with pytest.raises(SyncSourceNotFoundError):
                 crud_sync_sources.delete_sync_source(db_session, source_id)
+
+        finally:
+            clear_all_sources(db_session)
+
+
+class TestSyncSourceErrors:
+    def setup_method(self):
+        self.source_name_1 = f"test_logs_source_1_{uuid.uuid4()}"
+        self.source_name_2 = f"test_logs_source_2_{uuid.uuid4()}"      
+
+    def test_add_and_read_single_log(self, db_session: Session, qcodes_set_up: Path):
+        """
+        Test adding a single log to a sync source and reading it back.
+        """
+        try:
+            # Create a source to associate logs with
+            source_1 = crud_sync_sources.create_sync_source(db_session, self.source_name_1, SyncSourceTypes.qcodes, create_valid_qcodes_config(qcodes_set_up), MOCK_SCOPE_1_UUID)
+            source_id = source_1.id
+            
+            error = ValueError("The value was too large")
+            crud_sync_sources.add_sync_source_error(db_session, source_id, 1, error)
+            
+            logs = crud_sync_sources.read_sync_source_errors(db_session, source_id)
+            
+            assert len(logs) == 1
+            assert logs[0].log_exception == repr(error)
+            assert logs[0].log_context is None
+            assert logs[0].log_traceback is None
+            assert logs[0].sync_source_id == source_id
+        finally:
+            clear_all_sources(db_session)
+
+    def test_add_log_with_stacktrace(self, db_session: Session, qcodes_set_up: Path):
+        """
+        Test adding a log with a stacktrace and verifying it is stored correctly.
+        """
+        try:
+            source_1 = crud_sync_sources.create_sync_source(db_session, self.source_name_1, SyncSourceTypes.qcodes, create_valid_qcodes_config(qcodes_set_up), MOCK_SCOPE_1_UUID)
+            source_id = source_1.id
+            
+            traceback_str = None
+            context = "This is a test context"
+            error = None
+            try:
+                8/0
+            except Exception as e:
+                error = e
+                traceback_str = traceback.format_exc()
+            
+            if error is None:
+                raise ValueError()
+                        
+            crud_sync_sources.add_sync_source_error(db_session, source_id, 1, error,
+                                                    log_context=context,
+                                                    log_traceback=traceback_str)
+            
+            # ensure the log is on the top.
+            time.sleep(0.001)
+            # Add another simple log to ensure we get the correct one
+            crud_sync_sources.add_sync_source_error(db_session, source_id, 2, error,
+                                                    log_context=context,
+                                                    log_traceback=traceback_str)
+            
+            
+            logs = crud_sync_sources.read_sync_source_errors(db_session, source_id, limit=2)
+            
+            # Logs are ordered by timestamp descending, so the last one added is first
+            assert len(logs) == 2
+            assert logs[0].sync_iteration == 2
+            assert logs[1].sync_iteration == 1
+            assert logs[1].log_exception == repr(error)
+            assert logs[1].log_context == context
+            assert logs[1].log_traceback == traceback_str
+            
+        finally:
+            clear_all_sources(db_session)
+
+    def test_log_pagination_limit_and_offset(self, db_session: Session, qcodes_set_up: Path):
+        """
+        Test the limit and offset functionality for reading logs from multiple sources.
+        """
+        try:
+            # Create two sources
+            source_1 = crud_sync_sources.create_sync_source(db_session, self.source_name_1, SyncSourceTypes.qcodes, create_valid_qcodes_config(qcodes_set_up, setup="Setup1"), MOCK_SCOPE_1_UUID)
+            source_1_id = source_1.id
+
+            # Add 5 logs to source 1
+            errors_s1 = [ValueError(f"S1-Log-{i}") for i in range(5)]
+            i = 0
+            for error in errors_s1:
+                crud_sync_sources.add_sync_source_error(db_session, source_1_id, i, error)
+                i += 1
+                time.sleep(0.001) # Ensure distinct timestamps
+
+            # Test Source 1 logs
+            # Test limit: get first 2 logs for source 1 (most recent)
+            logs_s1_limit2 = crud_sync_sources.read_sync_source_errors(db_session, source_1_id, limit=2)
+            assert len(logs_s1_limit2) == 2
+            assert logs_s1_limit2[0].log_exception == "ValueError('S1-Log-4')" # Most recent
+            assert logs_s1_limit2[1].log_exception == "ValueError('S1-Log-3')"
+
+            # Test offset: get logs starting from the 3rd one (index 2)
+            logs_s1_offset2 = crud_sync_sources.read_sync_source_errors(db_session, source_1_id, skip=2, limit=2)
+            assert len(logs_s1_offset2) == 2
+            assert logs_s1_offset2[0].log_exception == "ValueError('S1-Log-2')"
+            assert logs_s1_offset2[1].log_exception == "ValueError('S1-Log-1')"
+            
+            # Test offset reaching the end
+            logs_s1_offset4 = crud_sync_sources.read_sync_source_errors(db_session, source_1_id, skip=4, limit=2)
+            assert len(logs_s1_offset4) == 1
+            assert logs_s1_offset4[0].log_exception == "ValueError('S1-Log-0')"
+
+            # Test that logs from source 2 are not mixed in
+            all_logs_s1 = crud_sync_sources.read_sync_source_errors(db_session, source_1_id, limit=10)
+            assert len(all_logs_s1) == 5
+            assert all(log.log_exception.startswith("ValueError('S1-Log-") for log in all_logs_s1)
+            
+            
+            crud_sync_sources.delete_sync_source(db_session, source_1_id)
+            all_logs_s1 = crud_sync_sources.read_sync_source_errors(db_session, source_1_id, limit=10)
+            assert len(all_logs_s1) == 0
 
         finally:
             clear_all_sources(db_session)
