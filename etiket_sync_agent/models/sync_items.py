@@ -7,9 +7,8 @@ from sqlalchemy import ForeignKey, UniqueConstraint, Index, types
 from sqlalchemy.orm import Mapped, mapped_column
 
 from etiket_sync_agent.models.base import Base
-from etiket_sync_agent.models.types import CompressedJSON
 from etiket_sync_agent.models.utility.functions import utcnow
-from etiket_sync_agent.models.utility.types import UtcDateTime
+from etiket_sync_agent.models.utility.types import UtcDateTime, CompressedJSON
 class SyncItems(Base):
     __tablename__  = "sync_items"
     

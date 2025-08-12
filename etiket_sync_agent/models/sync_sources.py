@@ -7,11 +7,10 @@ from sqlalchemy import ForeignKey, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from etiket_sync_agent.models.base import Base
-from etiket_sync_agent.models.types import CompressedStr
 
 from etiket_sync_agent.models.enums import SyncSourceStatus, SyncSourceTypes
 from etiket_sync_agent.models.utility.functions import utcnow
-from etiket_sync_agent.models.utility.types import UtcDateTime
+from etiket_sync_agent.models.utility.types import UtcDateTime, CompressedStr
 
 class SyncSources(Base):
     __tablename__ = "sync_sources"
