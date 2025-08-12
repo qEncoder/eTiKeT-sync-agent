@@ -207,3 +207,20 @@ def test_only_one_status_record_exists(db_session: Session):
     all_records = db_session.query(SyncStatusRecord).all()
     assert len(all_records) == 1
     assert all_records[0].id == record1.id
+    
+def test_increment_sync_iteration(db_session: Session):
+    """Test that the sync iteration count is incremented correctly."""
+    # Create initial record
+    record_1 = crud_sync_status.get_or_create_status(db_session)
+    assert record_1.sync_iteration_count == 0
+    
+    # Increment sync iteration
+    iteration_1 = crud_sync_status.increment_sync_iteration(db_session)
+    
+    assert iteration_1 == 1
+    record_2 = crud_sync_status.get_status(db_session)
+    assert record_2.sync_iteration_count == iteration_1
+    
+    iteration_2 = crud_sync_status.increment_sync_iteration(db_session)
+    iteration_3 = crud_sync_status.increment_sync_iteration(db_session)
+    assert iteration_1 == iteration_2-1 == iteration_3-2

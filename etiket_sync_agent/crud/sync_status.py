@@ -1,7 +1,7 @@
 from typing import Optional
 
 from sqlalchemy.orm import Session
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from etiket_sync_agent.models.sync_status import SyncStatusRecord
 from etiket_sync_agent.models.enums import SyncStatus
@@ -53,6 +53,25 @@ class CRUD_sync_status:
         session.commit()
         session.refresh(status_record)
         return status_record
+    
+    def increment_sync_iteration(self, session: Session) -> int:
+        """
+        Increment the sync iteration count.
+        
+        Args:
+            session (Session): Database session
+        
+        Returns:
+            int: The new sync iteration count
+        """
+        stmt = (
+            update(SyncStatusRecord)
+            .values(sync_iteration_count=SyncStatusRecord.sync_iteration_count + 1)
+            .returning(SyncStatusRecord.sync_iteration_count)
+        )
+        result = session.execute(stmt).scalar_one()
+        session.commit()
+        return result
     
     def get_status(self, session: Session) -> SyncStatusRecord:
         """
