@@ -132,15 +132,16 @@ class LogEntry:
 @dataclass
 class ErrorEntry:
     message: str
-    stacktrace: str
+    exception: str
+    stacktrace: Optional[str] = None
     date: datetime.datetime = field(default_factory=utc_now)
 
     def to_dict(self):
-        return {"type": "error", "date": self.date.isoformat(), "message": self.message, "stacktrace": self.stacktrace}
+        return {"type": "error", "date": self.date.isoformat(), "message": self.message, "exception": self.exception, "stacktrace": self.stacktrace}
     
     @classmethod
     def from_dict(cls, data):
-        return cls(message=data['message'], stacktrace=data['stacktrace'], date=datetime.datetime.fromisoformat(data['date']))
+        return cls(message=data['message'], exception=data['exception'], stacktrace=data['stacktrace'], date=datetime.datetime.fromisoformat(data['date']))
 
 LogItem = Union["TaskEntry", "LogEntry", "ErrorEntry"]
 

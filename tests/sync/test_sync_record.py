@@ -38,11 +38,14 @@ def test_add_log_and_error(sync_item):
     """Test adding both a log and an error to the record."""
     record = SyncRecordManager(sync_item)
     record.add_log("An informational log.")
-    record.add_error("A test error.", "Traceback here")
+    error = ValueError("A test error.")
+    record.add_error("A test error.", error, "Traceback here")
 
     assert len(record.record.logs) == 2
     assert isinstance(record.record.logs[0], dsrc.LogEntry)
     assert isinstance(record.record.logs[1], dsrc.ErrorEntry)
+    assert record.record.logs[1].exception == repr(error)
+    assert record.record.logs[1].stacktrace == "Traceback here"
 
 def test_simple_task(sync_item):
     """Test logging within a single task."""
@@ -149,7 +152,8 @@ def test_json_serialization_deserialization(sync_item):
         record.add_upload_task("file1.txt")
         with record.task("sub_task"):
             record.add_log("sub_task log")
-            record.add_error("sub_task_error", "trace")
+            error = ValueError("sub_task_error")
+            record.add_error("sub_task_error", error)
     
     # Serialize
     record_dict = record.to_dict()

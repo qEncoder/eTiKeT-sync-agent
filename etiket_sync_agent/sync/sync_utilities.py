@@ -1,4 +1,4 @@
-import os, json, tempfile, logging, uuid, dataclasses, datetime, xarray, enum, shutil
+import os, json, tempfile, logging, uuid, dataclasses, datetime, xarray, enum, shutil, traceback
 
 from typing import List, Dict, Optional, Set, Tuple, Any, Type
 
@@ -176,7 +176,8 @@ class sync_utilities:
                     f_info.fileType = FileType.HDF5_NETCDF
                     sync_utilities.upload_file(file_path, s_item, f_info, sync_record)
             except Exception as e:
-                sync_record.add_error("Error converting xarray object to netcdf file", e)
+                traceback_str = traceback.format_exc()
+                sync_record.add_error("Error converting xarray object to netcdf file", e, traceback_str)
                 logger.exception("Failed to convert xarray object to netcdf file %s", f_info.name)
                 # fail silently -- errors noted in the manifest.
     
@@ -195,7 +196,8 @@ class sync_utilities:
                     sync_record.add_log("Conversion successfull")
                     sync_utilities.upload_file(file_path, s_item, f_info, sync_record)
             except Exception as e:
-                sync_record.add_error("Error converting JSON object to file", e)
+                traceback_str = traceback.format_exc()
+                sync_record.add_error("Error converting JSON object to file", e, traceback_str)
                 logger.exception("Failed to convert JSON object to file %s", f_info.name)
                 # fail silently -- errors noted in the manifest.
     
@@ -287,10 +289,12 @@ class sync_utilities:
                     file_create(file_create_data)
                     upload_file_to_server(file_path, file_create_data.uuid, file_create_data.version_id, md5_checksum, md5_checksum_netcdf4, False, sync_record)
             except CONNECTION_ERRORS as e:
-                sync_record.add_error("Connection error", e)
+                traceback_str = traceback.format_exc()
+                sync_record.add_error("Connection error", e, traceback_str)
                 raise e
             except Exception as e:
-                sync_record.add_error("Error uploading file to server, will try again later.", e)
+                traceback_str = traceback.format_exc()
+                sync_record.add_error("Error uploading file to server, will try again later.", e, traceback_str)
                 logger.exception("Failed to upload file :/")
                 # fail silently -- errors noted in the manifest.
     

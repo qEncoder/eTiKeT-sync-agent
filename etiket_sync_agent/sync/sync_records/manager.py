@@ -74,14 +74,16 @@ class SyncRecordManager:
                     return True
         return False
     
-    def add_error(self, message : str, error : Exception | str):
+    def add_error(self, message : str, error : Exception | str, stacktrace : Optional[str] = None):
         '''
         Add an error to the logs of the sync record.
         
         Args:
             error: The error to add.
         '''
-        error_entry = ErrorEntry(message=message, stacktrace=str(error))
+        if isinstance(error, Exception):
+            error = repr(error)
+        error_entry = ErrorEntry(message=message, exception=error, stacktrace=stacktrace)
         self.record.add_log_item(self.__current_log, error_entry)
         if isinstance(self.__current_log, TaskEntry):
             self.__current_log.has_errors = True

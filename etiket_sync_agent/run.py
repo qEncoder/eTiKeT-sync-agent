@@ -1,7 +1,9 @@
-import logging, time
+import logging, time, traceback
 
 from typing import Type
 from pathlib import Path
+
+from sqlalchemy.orm import Session
 
 from etiket_client.exceptions import NoLoginInfoFoundException
 from etiket_client.local.models.file import FileSelect
@@ -29,7 +31,6 @@ from etiket_sync_agent.backends.sources import get_source_sync_class
 from etiket_sync_agent.backends.native.sync_scopes import sync_scopes
 
 from etiket_client.remote.utility import check_internet_connection
-from etiket_client.local.database import Session 
 from etiket_client.remote.errors import CONNECTION_ERRORS
 
 logger = logging.getLogger(__name__)
@@ -73,6 +74,8 @@ def sync_loop():
         with get_db_session_context() as session_sync:
             with Session() as session_etiket:
                 status = crud_sync_status.get_or_create_status(session_sync)
+                sync_iteration = crud_sync_status.increment_sync_iteration(session_sync)
+
                 if status.status == SyncStatus.STOPPED:
                     time.sleep(1) #check again in 1 second
                     continue
@@ -90,7 +93,7 @@ def sync_loop():
                         last_sync_time = current_time
                         # assuming when getting here, the sync is running.
                         crud_sync_status.update_status(session_sync, SyncStatus.RUNNING)
-                        run_sync_iter(session_sync, session_etiket)
+                        run_sync_iter(session_sync, session_etiket, sync_iteration)
                 except NoLoginInfoFoundException:
                     logger.info("No access token found, waiting for 10 seconds.")
                     time.sleep(10)
@@ -105,7 +108,7 @@ def sync_loop():
                         logger.warning("No connection, waiting for 60 seconds.")
                     time.sleep(SyncConf.CONNECTION_ERROR_DELAY)
 
-def run_sync_iter(session_sync, session_etiket):
+def run_sync_iter(session_sync : Session, session_etiket : Session, sync_iteration: int):
     n_syncs = 0
     sync_sources = crud_sync_sources.list_sync_sources(session_sync)
 
@@ -190,8 +193,11 @@ def run_sync_iter(session_sync, session_etiket):
                 crud_sync_sources.update_sync_source(session_sync, sync_source.id,
                                                         status=SyncSourceStatus.ERROR)
                 raise e
-            except Exception:
+            except Exception as e:
                 logger.exception("Failed to sync %s", sync_source.name)
+                traceback_str = traceback.format_exc()
+                crud_sync_sources.add_sync_source_error(session_sync, sync_source.id, sync_iteration, e, traceback_str)
+                # check here if more that 5 sequential error --> change status to ERROR
     if n_syncs == 0:
         time.sleep(1)
 
@@ -264,8 +270,8 @@ def sync_dataset(sync_source : SyncSources, s_item : SyncItems, liveDS : bool) -
     except CONNECTION_ERRORS as e:
         raise e
     except Exception as e:
-        # any error should be reported in the manifest.
-        sync_record.add_error("failed to synchronize dataset with error", e)
+        traceback_str = traceback.format_exc()
+        sync_record.add_error("failed to synchronize dataset with error", e, traceback_str)
 
     if sync_record.has_errors():
         sync_record.add_log(f"Sync finished (live={liveDS}) with errors")

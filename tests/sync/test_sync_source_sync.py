@@ -1,5 +1,6 @@
 import time
 import threading
+from typing import Any
 from unittest.mock import patch, MagicMock, call
 from sqlalchemy.orm import Session
 
@@ -141,12 +142,15 @@ def test_sync_loop_running_status_does_something(db_session: Session, session_et
             except KeyboardInterrupt:
                 pass  # Expected way to exit the loop for testing
         
+        # check that the sync_iteration is 5
+        sync_iteration = crud_sync_status.get_status(db_session).sync_iteration_count
+        
         # Verify that sync functions WERE called
         mock_api_token.assert_called()
         mock_check_user.assert_called()
         mock_sync_scopes.assert_called_with(session_etiket_client)
         mock_clean_files.assert_called_with(session_etiket_client)
-        mock_run_sync_iter.assert_called_with(db_session, session_etiket_client)
+        mock_run_sync_iter.assert_called_with(db_session, session_etiket_client, sync_iteration)
         
         # Verify we had at least a couple iterations (confirming the loop was running)
         assert mock_run_sync_iter.call_count >= 2
