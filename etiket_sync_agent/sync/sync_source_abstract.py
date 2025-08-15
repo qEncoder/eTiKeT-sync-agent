@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import Type, List
+from typing import Any, Type, List
 from pathlib import Path
 
 from etiket_sync_agent.models.sync_items import SyncItems
@@ -14,11 +13,6 @@ class SyncSourceBase(ABC):
     
     @property
     @abstractmethod
-    def ConfigDataClass(self) -> Type[dataclass]:
-        raise NotImplementedError
-    
-    @property
-    @abstractmethod
     def MapToASingleScope(self) -> bool:
         raise NotImplementedError
     
@@ -26,21 +20,30 @@ class SyncSourceBase(ABC):
     @abstractmethod
     def LiveSyncImplemented(self) -> bool:
         return False
+    
+    @classmethod
+    @abstractmethod
+    def config_data_class(cls) -> Type[Any]:
+        raise NotImplementedError
 
     @staticmethod
     @abstractmethod
-    def checkLiveDataset(configData: Type[dataclass], syncIdentifier: SyncItems, maxPriority: bool) -> bool:
+    def checkLiveDataset(configData: Any, syncIdentifier: SyncItems, maxPriority: bool) -> bool:
         pass
     
     @staticmethod
     @abstractmethod
-    def syncDatasetNormal(configData: Type[dataclass], syncIdentifier: SyncItems, sync_record: SyncRecordManager):
+    def syncDatasetNormal(configData: Any, syncIdentifier: SyncItems, sync_record: SyncRecordManager):
         pass
     
     @staticmethod
     @abstractmethod
-    def syncDatasetLive(configData: Type[dataclass], syncIdentifier: SyncItems, sync_record: SyncRecordManager):
+    def syncDatasetLive(configData: Any, syncIdentifier: SyncItems, sync_record: SyncRecordManager):
         pass
+    
+    @classmethod
+    def sync_config(cls, config_data: dict) -> Any:
+        return cls.config_data_class(**config_data)
 
 class SyncSourceFileBase(SyncSourceBase):
     @property
@@ -50,11 +53,11 @@ class SyncSourceFileBase(SyncSourceBase):
     
     @staticmethod
     @abstractmethod
-    def rootPath(configData: Type[dataclass]) -> Path:
+    def rootPath(configData: Any) -> Path:
         raise NotImplementedError
 
 class SyncSourceDatabaseBase(SyncSourceBase):
     @staticmethod
     @abstractmethod
-    def getNewDatasets(configData: Type[dataclass], lastIdentifier: str) -> List[SyncItems]:
+    def getNewDatasets(config_data: Any, last_sync_item: SyncItems | None) -> List[SyncItems]:
         raise NotImplementedError

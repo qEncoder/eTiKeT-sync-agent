@@ -30,17 +30,20 @@ from etiket_sync_agent.backends.native.native_sync_config_class import NativeCon
 
 class NativeSync(SyncSourceDatabaseBase):
     SyncAgentName: typing.ClassVar[str] = "native"
-    ConfigDataClass: typing.ClassVar[typing.Type[NativeConfigData]] = NativeConfigData
     MapToASingleScope: typing.ClassVar[bool] = False
     LiveSyncImplemented: typing.ClassVar[bool] = False
+    
+    @classmethod
+    def config_data_class(cls) -> typing.Type[NativeConfigData]:
+        return NativeConfigData
 
     @staticmethod
-    def getNewDatasets(configData: NativeConfigData, lastIdentifier: str | None) -> typing.List[SyncItems]:
+    def getNewDatasets(config_data: NativeConfigData, last_sync_item: SyncItems | None) -> typing.List[SyncItems]:
         with Session() as session:
-            lastIdentifier_float = None
-            if lastIdentifier is not None:
-                lastIdentifier_float = float(lastIdentifier)
-            datasets = dao_dataset.get_sync_items(lastIdentifier_float, session)
+            last_timestamp = None
+            if last_sync_item is not None:
+                last_timestamp = last_sync_item.syncPriority
+            datasets = dao_dataset.get_sync_items(last_timestamp, session)
             sync_items = []
             for dataset in datasets:
                 modified_time = dataset.modified
@@ -49,7 +52,7 @@ class NativeSync(SyncSourceDatabaseBase):
                         modified_time = file.modified
                 modified_time_timestamp = modified_time.replace(tzinfo=datetime.timezone.utc).timestamp()
                 sync_item = SyncItems(datasetUUID = dataset.uuid,
-                                        dataIdentifier = dataset.uuid,
+                                        dataIdentifier = str(dataset.uuid),
                                         syncPriority = modified_time_timestamp)
                 sync_items.append(sync_item)
         return sync_items
