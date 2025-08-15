@@ -19,8 +19,7 @@ class OrderDirection(enum.StrEnum):
     desc = "desc"
     
 class SyncItemsCrud:
-    def create_sync_items(self, session : Session,
-                            sync_source_id : int, sync_items : List[SyncItems]) -> None:
+    def create_sync_items(self, session : Session, sync_source_id : int, sync_items : List[SyncItems]) -> None:
         # not exposed to the rest api
         if len(sync_items) == 0:
             return
@@ -51,7 +50,7 @@ class SyncItemsCrud:
             else:
                 create_list.append({"sync_source_id" : sync_source_id,
                                     "dataIdentifier" : s_item.dataIdentifier,
-                                    "datasetUUID" : uuid.uuid4(),
+                                    "datasetUUID" : s_item.datasetUUID if s_item.datasetUUID is not None else uuid.uuid4(),
                                     "syncPriority" : s_item.syncPriority})
         
         if create_list:
@@ -75,7 +74,6 @@ class SyncItemsCrud:
         
         result = session.execute(select_stmt).scalar_one_or_none()
 
-        
         # retry rules : 1st attempt after 1 hour, 2nd attempt after 1 day, 3rd attempt after 1 week, 4th attempt after 1 month
         if result is None:
             select_stmt = (
@@ -149,14 +147,14 @@ class SyncItemsCrud:
         result = session.execute(stmt).scalar_one()
         return result
     
-    def get_last_sync_item(self, session : Session, sync_source_id : int) -> SyncItems:
+    def get_last_sync_item(self, session : Session, sync_source_id : int) -> SyncItems | None:
         stmt = (
             select(SyncItems)
             .where(SyncItems.sync_source_id == sync_source_id)
             .order_by(SyncItems.syncPriority.desc())
             .limit(1)
         )
-        result = session.execute(stmt).scalar_one()
+        result = session.execute(stmt).scalar_one_or_none()
         return result
     
 crud_sync_items = SyncItemsCrud()

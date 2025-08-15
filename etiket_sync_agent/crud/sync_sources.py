@@ -166,7 +166,7 @@ class CRUD_sync_sources:
     
     def read_sync_source_errors(self, session : Session, sync_source_id : int, skip : int = 0, limit : int = 100) -> List[SyncSourceErrors]:
         stmt = select(SyncSourceErrors).where(SyncSourceErrors.sync_source_id == sync_source_id)
-        stmt = stmt.order_by(SyncSourceErrors.log_timestamp.desc()).offset(skip).limit(limit)
+        stmt = stmt.order_by(SyncSourceErrors.id.desc()).offset(skip).limit(limit)
         return session.execute(stmt).scalars().all()
 
 def validate_config_data(config_data : dict, sync_source_type : SyncSourceTypes, current_sync_source : Optional[SyncSources] = None) -> Any:
