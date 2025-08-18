@@ -18,25 +18,30 @@ from etiket_client.remote.endpoints.models.file import FileRead, FileStatusRem, 
 from etiket_client.remote.endpoints.models.types import FileStatusRem, FileStatusLocal
 from etiket_client.remote.endpoints.models.dataset import DatasetCreate as DatasetCreateRemote
 from etiket_sync_agent.sync.sync_utilities import md5
+from etiket_sync_agent.models.sync_items import SyncItems
 from etiket_sync_agent.sync.uploader.file_uploader import upload_new_file_single
 from etiket_sync_agent.backends.native.native_sync_class import NativeSync
 from etiket_sync_agent.backends.native.native_sync_config_class import NativeConfigData
 
 from etiket_sync_agent.sync.sync_records.manager import SyncRecordManager
 
-MIN_LAST_IDENTIFIER = datetime.now().timestamp()
+MIN_LAST_IDENTIFIER = SyncItems(
+    datasetUUID=uuid.uuid4(),
+    dataIdentifier="initial",
+    syncPriority=datetime.now().timestamp(),
+)
 
 @pytest.fixture()
-def min_last_identifier():
+def min_last_sync_item():
     return MIN_LAST_IDENTIFIER
 
 
-def test_getNewDatasets(session_etiket_client: Session, get_scope_uuid: uuid.UUID, min_last_identifier: float):
+def test_getNewDatasets(session_etiket_client: Session, get_scope_uuid: uuid.UUID, min_last_sync_item: SyncItems):
     with tempfile.TemporaryDirectory() as temp_dir:
         configData = NativeConfigData()
         
         # check if it returns nothing
-        sync_items = NativeSync.getNewDatasets(configData, str(min_last_identifier))
+        sync_items = NativeSync.getNewDatasets(configData, min_last_sync_item)
         assert len(sync_items) == 0
 
         # Create dataset
@@ -54,10 +59,10 @@ def test_getNewDatasets(session_etiket_client: Session, get_scope_uuid: uuid.UUI
         dao_dataset.create(ds, session_etiket_client)
 
         # 1) Detect new dataset
-        sync_items = NativeSync.getNewDatasets(configData, str(min_last_identifier))
+        sync_items = NativeSync.getNewDatasets(configData, min_last_sync_item)
         assert len(sync_items) == 1
         assert sync_items[0].datasetUUID == ds.uuid
-        last_identifier = sync_items[0].syncPriority
+        last_sync_item = sync_items[0]
 
         # 2) Add a file -> should update priority
         size1, path1 = create_file(temp_dir, "file1.txt")
@@ -78,21 +83,21 @@ def test_getNewDatasets(session_etiket_client: Session, get_scope_uuid: uuid.UUI
         )
         dao_file.create(f1, session_etiket_client)
 
-        sync_items = NativeSync.getNewDatasets(configData, str(last_identifier))
+        sync_items = NativeSync.getNewDatasets(configData, last_sync_item)
         assert len(sync_items) == 1
         assert sync_items[0].datasetUUID == ds.uuid
-        assert sync_items[0].syncPriority > last_identifier
-        last_identifier = sync_items[0].syncPriority
+        assert sync_items[0].syncPriority > last_sync_item.syncPriority
+        last_sync_item = sync_items[0]
 
         # 3) Update dataset attribute (e.g., name) -> should update priority again
         du = DatasetUpdate(name="ds_priority_test_updated")
         dao_dataset.update(ds.uuid, du, session_etiket_client)
 
-        sync_items = NativeSync.getNewDatasets(configData, str(last_identifier))
+        sync_items = NativeSync.getNewDatasets(configData, last_sync_item)
         assert len(sync_items) == 1
         assert sync_items[0].datasetUUID == ds.uuid
-        assert sync_items[0].syncPriority > last_identifier
-        last_identifier = sync_items[0].syncPriority
+        assert sync_items[0].syncPriority > last_sync_item.syncPriority
+        last_sync_item = sync_items[0]
 
         # 4) Add another file -> should update priority again
         size2, path2 = create_file(temp_dir, "file2.txt")
@@ -113,17 +118,17 @@ def test_getNewDatasets(session_etiket_client: Session, get_scope_uuid: uuid.UUI
         )
         dao_file.create(f2, session_etiket_client)
 
-        sync_items = NativeSync.getNewDatasets(configData, str(last_identifier))
+        sync_items = NativeSync.getNewDatasets(configData, last_sync_item)
         assert len(sync_items) == 1
         assert sync_items[0].datasetUUID == ds.uuid
-        assert sync_items[0].syncPriority > last_identifier
+        assert sync_items[0].syncPriority > last_sync_item.syncPriority
         
         global MIN_LAST_IDENTIFIER
-        MIN_LAST_IDENTIFIER = sync_items[0].syncPriority
+        MIN_LAST_IDENTIFIER = sync_items[0]
 
 def test_CreateDatasetWithSingleFile_SyncsSuccessfully(
     session_etiket_client: Session, get_scope_uuid: uuid.UUID, 
-    min_last_identifier: float
+    min_last_sync_item: SyncItems
 ):
     scope_uuid = get_scope_uuid
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -163,7 +168,7 @@ def test_CreateDatasetWithSingleFile_SyncsSuccessfully(
         dao_file.create(f1, session_etiket_client)
 
         # Detect and sync
-        sync_items = NativeSync.getNewDatasets(configData, str(min_last_identifier))
+        sync_items = NativeSync.getNewDatasets(configData, min_last_sync_item)
         assert len(sync_items) == 1
         assert sync_items[0].datasetUUID == ds.uuid
         sr = SyncRecordManager(sync_items[0])
@@ -201,10 +206,10 @@ def test_CreateDatasetWithSingleFile_SyncsSuccessfully(
         dao_file.create(fc, session_etiket_client)
         
         # use NativeSync.getNewDatasets()
-        sync_items = NativeSync.getNewDatasets(configData, str(min_last_identifier))
+        sync_items = NativeSync.getNewDatasets(configData, min_last_sync_item)
         assert len(sync_items) == 1
         assert sync_items[0].datasetUUID == ds.uuid
-        last_identifier = sync_items[0].syncPriority
+        last_sync_item = sync_items[0]
         
         # check if it finds the dataset ( look at the sync items and see that it has the uuid of the dataset)
         ds_local = dao_dataset.read(ds.uuid, session_etiket_client)
@@ -223,10 +228,10 @@ def test_CreateDatasetWithSingleFile_SyncsSuccessfully(
         check_dataset_in_sync(ds_local, ds_remote)
         
         # check for new sync items again, there should be nothing
-        sync_items = NativeSync.getNewDatasets(configData, str(last_identifier))
+        sync_items = NativeSync.getNewDatasets(configData, last_sync_item)
         assert len(sync_items) == 0
 
-def test_DatasetAttributeModification(session_etiket_client: Session, get_scope_uuid: uuid.UUID, min_last_identifier: float):
+def test_DatasetAttributeModification(session_etiket_client: Session, get_scope_uuid: uuid.UUID, min_last_sync_item: SyncItems):
     scope_uuid = get_scope_uuid
     with tempfile.TemporaryDirectory() as temp_dir:
         configData = NativeConfigData()
@@ -264,13 +269,13 @@ def test_DatasetAttributeModification(session_etiket_client: Session, get_scope_
         dao_file.create(f1, session_etiket_client)
 
         # Initial detection and sync
-        sync_items = NativeSync.getNewDatasets(configData, str(min_last_identifier))
+        sync_items = NativeSync.getNewDatasets(configData, min_last_sync_item)
         assert len(sync_items) == 1
-        last_identifier = sync_items[0].syncPriority
+        last_sync_item = sync_items[0]
         sr = SyncRecordManager(sync_items[0])
         NativeSync.syncDatasetNormal(configData, sync_items[0], sr)
         
-        sync_items = NativeSync.getNewDatasets(configData, str(last_identifier))
+        sync_items = NativeSync.getNewDatasets(configData, last_sync_item)
         assert len(sync_items) == 0
         
         # Modify dataset attribute(s)
@@ -278,9 +283,9 @@ def test_DatasetAttributeModification(session_etiket_client: Session, get_scope_
         dao_dataset.update(ds.uuid, du, session_etiket_client)
     
         # Should be detected as new due to modified timestamp
-        sync_items = NativeSync.getNewDatasets(configData, str(last_identifier))
+        sync_items = NativeSync.getNewDatasets(configData, last_sync_item)
         assert len(sync_items) == 1
-        last_identifier = sync_items[0].syncPriority
+        last_sync_item = sync_items[0]
         
         # Sync again
         sr2 = SyncRecordManager(sync_items[0])
@@ -292,10 +297,10 @@ def test_DatasetAttributeModification(session_etiket_client: Session, get_scope_
         
         check_dataset_in_sync(ds_local, ds_remote)
         
-        sync_items = NativeSync.getNewDatasets(configData, str(last_identifier))
+        sync_items = NativeSync.getNewDatasets(configData, last_sync_item)
         assert len(sync_items) == 0
 
-def test_DatasetFileAddition(session_etiket_client: Session, get_scope_uuid: uuid.UUID, min_last_identifier: float):
+def test_DatasetFileAddition(session_etiket_client: Session, get_scope_uuid: uuid.UUID, min_last_sync_item: SyncItems):
     scope_uuid = get_scope_uuid
     with tempfile.TemporaryDirectory() as temp_dir:
         configData = NativeConfigData()
@@ -333,13 +338,13 @@ def test_DatasetFileAddition(session_etiket_client: Session, get_scope_uuid: uui
         dao_file.create(f1, session_etiket_client)
 
         # Initial detection and sync
-        sync_items = NativeSync.getNewDatasets(configData, str(min_last_identifier))
+        sync_items = NativeSync.getNewDatasets(configData, min_last_sync_item)
         assert len(sync_items) == 1
-        last_identifier = sync_items[0].syncPriority
+        last_sync_item = sync_items[0]
         sr = SyncRecordManager(sync_items[0])
         NativeSync.syncDatasetNormal(configData, sync_items[0], sr)
 
-        sync_items = NativeSync.getNewDatasets(configData, str(last_identifier))
+        sync_items = NativeSync.getNewDatasets(configData, last_sync_item)
         assert len(sync_items) == 0
 
         # Add a new file to the dataset
@@ -363,9 +368,9 @@ def test_DatasetFileAddition(session_etiket_client: Session, get_scope_uuid: uui
         dao_file.create(f2, session_etiket_client)
 
         # Should be detected as new due to dataset modification
-        sync_items = NativeSync.getNewDatasets(configData, str(last_identifier))
+        sync_items = NativeSync.getNewDatasets(configData, last_sync_item)
         assert len(sync_items) == 1
-        last_identifier = sync_items[0].syncPriority
+        last_sync_item = sync_items[0]
 
         # Sync again
         sr2 = SyncRecordManager(sync_items[0])
@@ -378,11 +383,11 @@ def test_DatasetFileAddition(session_etiket_client: Session, get_scope_uuid: uui
         # Ensure specific files exist remotely
         _ = find_file(ds_remote.files, f1_uuid, 1)
         _ = find_file(ds_remote.files, f2_uuid, 1)
-
-        sync_items = NativeSync.getNewDatasets(configData, str(last_identifier))
+        
+        sync_items = NativeSync.getNewDatasets(configData, last_sync_item)
         assert len(sync_items) == 0
 
-def test_DatasetFileModification(session_etiket_client: Session, get_scope_uuid: uuid.UUID, min_last_identifier: float):
+def test_DatasetFileModification(session_etiket_client: Session, get_scope_uuid: uuid.UUID, min_last_sync_item: SyncItems):
     scope_uuid = get_scope_uuid
     with tempfile.TemporaryDirectory() as temp_dir:
         configData = NativeConfigData()
@@ -420,9 +425,9 @@ def test_DatasetFileModification(session_etiket_client: Session, get_scope_uuid:
         dao_file.create(f1, session_etiket_client)
 
         # Initial detection and sync
-        sync_items = NativeSync.getNewDatasets(configData, str(min_last_identifier))
+        sync_items = NativeSync.getNewDatasets(configData, min_last_sync_item)
         assert len(sync_items) == 1
-        last_identifier = sync_items[0].syncPriority
+        last_sync_item = sync_items[0]
         sr = SyncRecordManager(sync_items[0])
         NativeSync.syncDatasetNormal(configData, sync_items[0], sr)
 
@@ -446,14 +451,14 @@ def test_DatasetFileModification(session_etiket_client: Session, get_scope_uuid:
         dao_file.create(f2, session_etiket_client)
 
         # Should be detected as new due to dataset modification
-        sync_items = NativeSync.getNewDatasets(configData, str(last_identifier))
+        sync_items = NativeSync.getNewDatasets(configData, last_sync_item)
         assert len(sync_items) == 1
 
         # Sync again
         sr2 = SyncRecordManager(sync_items[0])
         NativeSync.syncDatasetNormal(configData, sync_items[0], sr2)
         
-        sync_items = NativeSync.getNewDatasets(configData, str(last_identifier))
+        sync_items = NativeSync.getNewDatasets(configData, last_sync_item)
         assert len(sync_items) == 0
 
         # Validate remote has both versions and latest secured
@@ -463,11 +468,11 @@ def test_DatasetFileModification(session_etiket_client: Session, get_scope_uuid:
         _ = find_file(ds_remote.files, f_uuid, 1)
         _ = find_file(ds_remote.files, f_uuid, 2)
         
-        sync_items = NativeSync.getNewDatasets(configData, str(last_identifier))
+        sync_items = NativeSync.getNewDatasets(configData, last_sync_item)
         assert len(sync_items) == 0
 
 def test_RemoteDatasetExists_LocalNameChangeAndNewFileVersion_SyncsCorrectly(
-    session_etiket_client: Session, get_scope_uuid: uuid.UUID, min_last_identifier: float
+    session_etiket_client: Session, get_scope_uuid: uuid.UUID, min_last_sync_item: SyncItems
 ):
     scope_uuid = get_scope_uuid
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -539,7 +544,7 @@ def test_RemoteDatasetExists_LocalNameChangeAndNewFileVersion_SyncsCorrectly(
         dao_file.create(f2, session_etiket_client)
 
         # Detect and sync
-        sync_items = NativeSync.getNewDatasets(configData, str(min_last_identifier))
+        sync_items = NativeSync.getNewDatasets(configData, min_last_sync_item)
         assert len(sync_items) == 1
         sr = SyncRecordManager(sync_items[0])
         NativeSync.syncDatasetNormal(configData, sync_items[0], sr)
@@ -556,7 +561,7 @@ def test_RemoteDatasetExists_LocalNameChangeAndNewFileVersion_SyncsCorrectly(
 # Local created first, then remote created with different name, plus new local version
 
 def test_LocalFirst_ThenRemoteDifferentName_NewLocalVersion_UploadsAndKeepsRemote(
-    session_etiket_client: Session, get_scope_uuid: uuid.UUID, min_last_identifier: float
+    session_etiket_client: Session, get_scope_uuid: uuid.UUID, min_last_sync_item: SyncItems
 ):
     scope_uuid = get_scope_uuid
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -629,7 +634,7 @@ def test_LocalFirst_ThenRemoteDifferentName_NewLocalVersion_UploadsAndKeepsRemot
         dataset_create(remote_ds)
         
         # Detect and sync
-        sync_items = NativeSync.getNewDatasets(configData, str(min_last_identifier))
+        sync_items = NativeSync.getNewDatasets(configData, min_last_sync_item)
         assert len(sync_items) == 1
         sr = SyncRecordManager(sync_items[0])
         NativeSync.syncDatasetNormal(configData, sync_items[0], sr)

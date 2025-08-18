@@ -78,11 +78,12 @@ def set_up_etiket_client_db():
 
         db_url = f"sqlite+pysqlite:///{db_path}"
         
-        import etiket_client.settings.folders
-        etiket_client.settings.folders.SQL_URL = db_url
         import etiket_client.local.database
-        etiket_client.local.database.load_engine()
-        etiket_client.local.database.run_alembic()
+        
+        etiket_client.local.database.DATABASE_URL = db_url
+        from etiket_client.local.database import load_engine
+        load_engine()
+        
         yield
         
         if db_path.exists():
@@ -94,10 +95,11 @@ def set_up_etiket_session(set_up_etiket_client_db):
     Logs in the user and returns a session.
     '''
     from etiket_client.remote.authenticate import login_legacy
-    
-    login_legacy(username="test_user", password="test_qdrive", institution_url="https://localhost")
-    yield
 
+    login_legacy(username="test_user", password="test_qdrive", institution_url="https://localhost")
+    
+    yield
+    
 @pytest.fixture(scope="session")
 def get_bucket_uuid(set_up_etiket_session) -> uuid.UUID:
     from etiket_client.remote.endpoints.S3 import s3_bucket_read
@@ -121,22 +123,22 @@ def get_scope_uuid(get_bucket_uuid : uuid.UUID) -> uuid.UUID:
     scope_uuid = uuid.uuid4()
     sc = ScopeCreate(name=f"test_scope_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
                         description="test_scope", 
-                        uuid=str(scope_uuid),
+                        uuid=scope_uuid,
                         bucket_uuid=bucket_uuid)
     scope_create(sc)
     
     # sync scopes
     from etiket_client.sync.backends.native.sync_scopes import sync_scopes
-    from etiket_client.local.database import Session as SessionEtiketClient, engine
+    from etiket_client.local.database import get_db_session_context
     
-    with SessionEtiketClient() as session:
+    with get_db_session_context() as session:
         sync_scopes(session)
-
+    
     return scope_uuid
 
 @pytest.fixture(scope="function")
 def session_etiket_client(set_up_etiket_session) -> Generator[Session, None, None]:
-    from etiket_client.local.database import Session as SessionEtiketClient
+    from etiket_client.local.database import get_db_session_context
     
-    with SessionEtiketClient() as session:
+    with get_db_session_context() as session:
         yield session

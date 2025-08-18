@@ -10,7 +10,7 @@ from etiket_client.remote.endpoints.models.dataset import DatasetCreate, Dataset
 from etiket_client.remote.endpoints.models.types import FileStatusRem, FileType
 from etiket_client.remote.endpoints.models.file import FileCreate, FileRead as FileReadRem
 
-from etiket_client.local.database import Session
+from etiket_client.local.database import get_db_session_context as get_db_session_context_etiket
 from etiket_client.local.dao.dataset import dao_dataset
 from etiket_client.local.dao.file import dao_file
 from etiket_client.local.models.dataset import  DatasetCreate as DatasetCreateLocal, DatasetRead as DatasetReadLocal, DatasetUpdate as DatasetUpdateLocal
@@ -89,7 +89,7 @@ class sync_utilities:
         '''        
         with sync_record.task("Creating or updating dataset on remote server"):
             with get_db_session_context() as session_sync:
-                with Session() as session_etiket:
+                with get_db_session_context_etiket() as session_etiket:
                     try :
                         ds = dataset_read(ds_info.datasetUUID)
                         sync_record.add_log("Dataset record found on remote server (by uuid).")
@@ -318,7 +318,7 @@ def read_files(dataset_uuid : uuid.UUID, file_name : str) -> Tuple[Dict[int, Fil
     l_files = {}
     r_files = {}
     
-    with Session() as session:
+    with get_db_session_context_etiket() as session:
         try:
             print(dataset_uuid, file_name)
             l_files_list = dao_file.get_file_by_name(dataset_uuid, file_name, session=session)
@@ -460,7 +460,7 @@ def replace_local_file(dataset_uuid : uuid.UUID, file_path : str, file : FileRea
         raise FileNotFoundError(f"Source file not found: {file_path}")
         
     try:
-        with Session() as session:
+        with get_db_session_context_etiket() as session:
             dataset = dao_dataset.read(dataset_uuid, session) 
             
             if file.local_path is not None and os.path.exists(file.local_path):

@@ -12,12 +12,7 @@ class UtcDateTime(types.TypeDecorator):
         if value is None:
             return None
         
-        value = value.astimezone(timezone.utc).replace(tzinfo=None)
-        return value.strftime("%Y-%m-%d %H:%M:%S.%f")
-    
-    def coerce_compared_value(self, op, value):
-        # see https://docs.sqlalchemy.org/en/20/core/custom_types.html#sqlalchemy.types.TypeDecorator
-        return self.impl.coerce_compared_value(op, value)   
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
 
     def process_result_value(self, value : datetime, dialect):
         value = value.replace(tzinfo=timezone.utc)

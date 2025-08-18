@@ -125,7 +125,6 @@ class LocalFileConfig:
         # Calculate MD5 checksum from the provided file
         md5_checksum = md5(file_path)
         version_id = generate_version_id(datetime.datetime.fromtimestamp(os.path.getmtime(file_path)))
-        print(file_uuid, version_id)
         
         file_type = FileType.JSON
         if file_path.endswith('.hdf5'):

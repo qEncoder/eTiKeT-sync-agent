@@ -59,6 +59,7 @@ from etiket_client.remote.endpoints.models.types import FileStatusLocal
 from etiket_sync_agent.backends.native.native_sync_class import NativeSync
 from etiket_sync_agent.backends.native.native_sync_config_class import NativeConfigData
 from etiket_sync_agent.sync.sync_records.manager import SyncRecordManager
+from etiket_sync_agent.models.sync_items import SyncItems
 
 
 def _create_file(temp_dir: str, filename: str) -> tuple[int, str]:
@@ -77,7 +78,11 @@ def _find_file(files: list[FileRead], file_uuid: uuid.UUID, version_id: int) -> 
 def test_s1_local_complete_text_remote_dataset_only_uploads_and_secures(
     session_etiket_client: Session, get_scope_uuid: uuid.UUID):
     scope_uuid = get_scope_uuid
-    min_last_identifier = datetime.now().timestamp()
+    min_last_sync_item = SyncItems(
+        datasetUUID=uuid.uuid4(),
+        dataIdentifier="initial",
+        syncPriority=datetime.now().timestamp(),
+    )
     with tempfile.TemporaryDirectory() as temp_dir:
         config = NativeConfigData()
 
@@ -128,7 +133,7 @@ def test_s1_local_complete_text_remote_dataset_only_uploads_and_secures(
         dataset_create(ds_remote_create)
 
         # Detect and sync
-        sync_items = NativeSync.getNewDatasets(config, str(min_last_identifier))
+        sync_items = NativeSync.getNewDatasets(config, min_last_sync_item)
         assert len(sync_items) == 1
         sr = SyncRecordManager(sync_items[0])
         NativeSync.syncDatasetNormal(config, sync_items[0], sr)
@@ -148,7 +153,11 @@ def test_s2_local_complete_text_remote_file_record_exists_uploads_and_secures(
     session_etiket_client: Session, get_scope_uuid: uuid.UUID
 ):
     scope_uuid = get_scope_uuid
-    min_last_identifier = datetime.now().timestamp()
+    min_last_sync_item = SyncItems(
+        datasetUUID=uuid.uuid4(),
+        dataIdentifier="initial",
+        syncPriority=datetime.now().timestamp(),
+    )
     with tempfile.TemporaryDirectory() as temp_dir:
         config = NativeConfigData()
 
@@ -215,7 +224,7 @@ def test_s2_local_complete_text_remote_file_record_exists_uploads_and_secures(
         _ = file_generate_presigned_upload_link_single(file_uuid, 1)
 
         # Detect and sync
-        sync_items = NativeSync.getNewDatasets(config, str(min_last_identifier))
+        sync_items = NativeSync.getNewDatasets(config, min_last_sync_item)
         assert len(sync_items) == 1
         sr = SyncRecordManager(sync_items[0])
         NativeSync.syncDatasetNormal(config, sync_items[0], sr)
@@ -230,7 +239,11 @@ def test_s3_local_hdf5_cache_not_uploaded(
     session_etiket_client: Session, get_scope_uuid: uuid.UUID
 ):
     scope_uuid = get_scope_uuid
-    min_last_identifier = datetime.now().timestamp()
+    min_last_sync_item = SyncItems(
+        datasetUUID=uuid.uuid4(),
+        dataIdentifier="initial",
+        syncPriority=datetime.now().timestamp(),
+    )
     with tempfile.TemporaryDirectory() as temp_dir:
         config = NativeConfigData()
 
@@ -268,7 +281,7 @@ def test_s3_local_hdf5_cache_not_uploaded(
         dao_file.create(f_local, session_etiket_client)
 
         # Detect and sync (should skip cache file)
-        sync_items = NativeSync.getNewDatasets(config, str(min_last_identifier))
+        sync_items = NativeSync.getNewDatasets(config, min_last_sync_item)
         assert len(sync_items) == 1
         sr = SyncRecordManager(sync_items[0])
         NativeSync.syncDatasetNormal(config, sync_items[0], sr)
@@ -282,7 +295,11 @@ def test_s4_local_complete_synced_true_hdf5_not_uploaded(
     session_etiket_client: Session, get_scope_uuid: uuid.UUID
 ):
     scope_uuid = get_scope_uuid
-    min_last_identifier = datetime.now().timestamp()
+    min_last_sync_item = SyncItems(
+        datasetUUID=uuid.uuid4(),
+        dataIdentifier="initial",
+        syncPriority=datetime.now().timestamp(),
+    )
     with tempfile.TemporaryDirectory() as temp_dir:
         config = NativeConfigData()
 
@@ -320,7 +337,7 @@ def test_s4_local_complete_synced_true_hdf5_not_uploaded(
         dao_file.create(f_local, session_etiket_client)
 
         # Detect and sync (should skip already-synchronized file)
-        sync_items = NativeSync.getNewDatasets(config, str(min_last_identifier))
+        sync_items = NativeSync.getNewDatasets(config, min_last_sync_item)
         assert len(sync_items) == 1
         sr = SyncRecordManager(sync_items[0])
         NativeSync.syncDatasetNormal(config, sync_items[0], sr)
@@ -335,7 +352,11 @@ def test_s5_local_writing_hdf5_not_uploaded(
     session_etiket_client: Session, get_scope_uuid: uuid.UUID
 ):
     scope_uuid = get_scope_uuid
-    min_last_identifier = datetime.now().timestamp()
+    min_last_sync_item = SyncItems(
+        datasetUUID=uuid.uuid4(),
+        dataIdentifier="initial",
+        syncPriority=datetime.now().timestamp(),
+    )
     with tempfile.TemporaryDirectory() as temp_dir:
         config = NativeConfigData()
 
@@ -373,7 +394,7 @@ def test_s5_local_writing_hdf5_not_uploaded(
         dao_file.create(f_local, session_etiket_client)
 
         # Detect and sync (should skip writing status)
-        sync_items = NativeSync.getNewDatasets(config, str(min_last_identifier))
+        sync_items = NativeSync.getNewDatasets(config, min_last_sync_item)
         assert len(sync_items) == 1
         sr = SyncRecordManager(sync_items[0])
         NativeSync.syncDatasetNormal(config, sync_items[0], sr)

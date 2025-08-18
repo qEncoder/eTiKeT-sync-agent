@@ -2,7 +2,7 @@ import typing, uuid, datetime
 
 from etiket_client.local.dao.dataset import dao_dataset, DatasetUpdate as DatasetUpdateLocal
 from etiket_client.local.dao.file import dao_file, FileUpdate as FileUpdateLocal
-from etiket_client.local.database import Session 
+from etiket_client.local.database import get_db_session_context 
 from etiket_client.local.models.file import FileSelect, FileStatusLocal, FileType
 from etiket_client.local.models.dataset import DatasetRead
 
@@ -39,7 +39,7 @@ class NativeSync(SyncSourceDatabaseBase):
 
     @staticmethod
     def getNewDatasets(config_data: NativeConfigData, last_sync_item: SyncItems | None) -> typing.List[SyncItems]:
-        with Session() as session:
+        with get_db_session_context() as session:
             last_timestamp = None
             if last_sync_item is not None:
                 last_timestamp = last_sync_item.syncPriority
@@ -65,7 +65,7 @@ class NativeSync(SyncSourceDatabaseBase):
     def syncDatasetNormal(configData: NativeConfigData, syncIdentifier: SyncItems, sync_record: SyncRecordManager):
         # Here manual functions are used.
         with sync_record.task("Start synchronization of the dataset"):
-            with Session() as session:
+            with get_db_session_context() as session:
                 with sync_record.task("Read local dataset"):
                     dataset_local = dao_dataset.read(syncIdentifier.datasetUUID, session)
                     sync_record.add_log("Success!")

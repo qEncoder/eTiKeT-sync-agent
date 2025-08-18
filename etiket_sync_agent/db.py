@@ -19,7 +19,6 @@ ENGINE = None
 SESSION_LOCAL: Optional[sessionmaker] = None
 
 def load_engine():
-    print("Loading engine")
     global ENGINE, SESSION_LOCAL
 
     db_engine = create_engine(DATABASE_URL)
@@ -28,7 +27,7 @@ def load_engine():
     try:
         with db_engine.begin() as connection:
             import etiket_sync_agent
-                
+            
             from alembic.config import Config
             from alembic import command
 
