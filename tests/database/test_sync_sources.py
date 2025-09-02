@@ -81,7 +81,7 @@ def create_valid_qcodes_config(db_path: Path, setup: str = "TestSetup", extra: O
     config = QCoDeSConfigData(
         database_path=db_path,
         set_up=setup,
-        extra_attributes=extra or {}
+        static_attributes=extra or {}
     )
     # Bypass validation during test setup as it checks for existing sources in the *real* DB
     return dataclasses.asdict(config)
@@ -131,7 +131,7 @@ class TestSyncSourcesCRUD:
             assert source.default_scope == MOCK_SCOPE_1_UUID
             assert source.config_data["database_path"] == str(qcodes_set_up.resolve())
             assert source.config_data["set_up"] == "Setup1"
-            assert source.config_data["extra_attributes"] == {"key": "value"}
+            assert source.config_data["static_attributes"] == {"key": "value"}
             assert source.items_total == 0 # Defaults
             assert source.items_synchronized == 0
             assert source.items_failed == 0
@@ -285,7 +285,7 @@ class TestSyncSourcesCRUD:
             updated_config = create_valid_qcodes_config(qcodes_set_up, setup="UpdatedSetup", extra={"new_key": "new_value"})
             source = crud_sync_sources.update_sync_source(db_session, source_id, config_data=updated_config)
             assert source.config_data["set_up"] == "UpdatedSetup"
-            assert source.config_data["extra_attributes"] == {"new_key": "new_value"}
+            assert source.config_data["static_attributes"] == {"new_key": "new_value"}
             assert source.last_update > last_update_after_scope
             last_update_after_config = source.last_update
             time.sleep(0.01)

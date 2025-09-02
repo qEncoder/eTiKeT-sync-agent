@@ -94,8 +94,7 @@ def test_sync_loop_running_status_does_something(db_session: Session, session_et
             patch('etiket_sync_agent.run.dao_file_delete_queue.clean_files') as mock_clean_files, \
             patch('etiket_sync_agent.run.run_sync_iter') as mock_run_sync_iter, \
             patch('etiket_sync_agent.run.get_db_session_context') as mock_session_cls, \
-            patch('etiket_sync_agent.run.Session') as mock_session_etiket_client, \
-            patch('etiket_sync_agent.run.user_settings') as mock_user_settings, \
+            patch('etiket_sync_agent.run.get_db_session_etiket') as mock_session_etiket_client, \
             patch('etiket_sync_agent.run.SyncConf') as mock_sync_conf:
         
         # Set faster timing intervals for testing
@@ -111,10 +110,7 @@ def test_sync_loop_running_status_does_something(db_session: Session, session_et
         
         mock_session_etiket_client.return_value.__enter__.return_value = session_etiket_client
         mock_session_etiket_client.return_value.__exit__.return_value = None
-        
-        # Mock user_settings.user_sub
-        mock_user_settings.user_sub = "test_user"
-        
+
         # Mock api_token_session context manager
         mock_api_token.return_value.__enter__.return_value = None
         mock_api_token.return_value.__exit__.return_value = None

@@ -12,7 +12,8 @@ from etiket_client.local.models.file import FileSelect
 from etiket_client.local.dao.file import dao_file, dao_file_delete_queue
 from etiket_client.local.dao.dataset import dao_dataset
 from etiket_client.local.exceptions import DatasetNotFoundException
-from etiket_client.remote.client import client, user_settings
+from etiket_client.remote.client import client
+from etiket_client.settings.user_settings import get_user_settings
 from etiket_client.remote.api_tokens import api_token_session
 from etiket_client.remote.endpoints.models.types import FileType
 
@@ -73,6 +74,8 @@ def sync_loop(n_cycles : int = 0):
     
     while (n_cycles <= 0 or n_cycles_completed < n_cycles):
         n_cycles_completed += 1
+        user_settings = get_user_settings()
+        user_settings.load()
         with get_db_session_context() as session_sync:
             with get_db_session_etiket() as session_etiket:
                 status = crud_sync_status.get_or_create_status(session_sync)

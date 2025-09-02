@@ -6,7 +6,7 @@ from etiket_client.remote.endpoints.scope import scope_list
 from etiket_client.local.dao.schema import dao_schema, SchemaCreate, SchemaUpdate
 from etiket_client.remote.endpoints.schema import schema_read_many
 
-from etiket_client.settings.user_settings import user_settings
+from etiket_client.settings.user_settings import get_user_settings
 
 import logging
 
@@ -17,6 +17,8 @@ def sync_scopes(session : Session):
     local_scope_uuids = [scope.uuid for scope in scopes_local]
     scopes_remote = scope_list()
 
+    user_settings = get_user_settings()
+    
     __sync_schemas(session)
     logger.info('Starting scope sync')
     for scope_r in scopes_remote:
