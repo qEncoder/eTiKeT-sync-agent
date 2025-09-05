@@ -23,7 +23,7 @@ class QCoDeSSync(SyncSourceDatabaseBase):
     LiveSyncImplemented: typing.ClassVar[bool] = True
     
     @staticmethod
-    def getNewDatasets(configData: QCoDeSConfigData, lastIdentifier: str) -> typing.List[SyncItems] | None:
+    def getNewDatasets(configData: QCoDeSConfigData, last_sync_item: SyncItems | None) -> typing.List[SyncItems] | None:
         if not os.path.exists(configData.database_path):
             raise FileNotFoundError(f"Database file not found at {configData.database_path}")
         
@@ -33,16 +33,17 @@ class QCoDeSSync(SyncSourceDatabaseBase):
         
         with sqlite3.connect(configData.database_path) as conn:
             conn.execute("PRAGMA journal_mode=WAL;")
-            if not lastIdentifier:
-                lastIdentifier = 0         
+            last_run_id = -1
+            if last_sync_item is not None:
+                last_run_id = last_sync_item.dataIdentifier
             
             get_newer_guid_query = """SELECT run_id FROM runs WHERE run_id > ? ORDER BY run_id ASC"""
             
             cursor = conn.cursor()
-            cursor.execute(get_newer_guid_query, (int(lastIdentifier),))
+            cursor.execute(get_newer_guid_query, (int(last_run_id),))
             rows = cursor.fetchall()
             
-            newSyncIdentifiers += [SyncItems(dataIdentifier=str(row[0])) for row in rows]
+            newSyncIdentifiers += [SyncItems(dataIdentifier=str(row[0]), syncPriority=row[0]) for row in rows]
         return newSyncIdentifiers
     
     @staticmethod
@@ -123,8 +124,8 @@ def create_ds_from_qcodes(configData: QCoDeSConfigData, syncIdentifier: SyncItem
     
     attributes = {"sample" : ds_qc.sample_name,
                     "set-up" : configData.set_up}
-    if configData.extra_attributes is not None:
-        attributes.update(configData.extra_attributes) 
+    if configData.static_attributes is not None:
+        attributes.update(configData.static_attributes) 
     
     try: # experimental
         if ds_qc.snapshot is not None:

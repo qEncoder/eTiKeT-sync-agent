@@ -17,7 +17,7 @@ from etiket_client.settings.user_settings import get_user_settings
 from etiket_client.remote.api_tokens import api_token_session
 from etiket_client.remote.endpoints.models.types import FileType
 
-from etiket_sync_agent.sync.manifest_mgr import manifest_manager
+from etiket_sync_agent.sync.manifests.manifest_mgr import manifest_manager
 from etiket_sync_agent.sync.sync_records.manager import SyncRecordManager
 from etiket_sync_agent.sync.sync_source_abstract import SyncSourceDatabaseBase, SyncSourceFileBase
 from etiket_sync_agent.crud.sync_items import crud_sync_items

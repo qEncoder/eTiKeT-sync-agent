@@ -15,12 +15,12 @@ def extract_labels_and_attributes_from_snapshot(snapshot : dict) -> Tuple[List[s
         Dict[str, Union[float, int, str]]: A dictionary of attributes extracted from the snapshot.
     """
     try:
-        station : Dict = snapshot.get("station", {})
-        instruments : Dict = station.get("instruments", {})
-        metadata : Dict = instruments.get("qh_meta", {})
-        params : Dict = metadata.get("parameters", {})
-        labels : List[str] = params.get("labels", {}).get("value", [])
-        attributes : Dict[str, Union[Dict, str]] = params.get("attributes", {}).get("value", {})
+        station = snapshot.get("station", {})
+        instruments = station.get("instruments", {})
+        metadata = instruments.get("qh_meta", {})
+        params = metadata.get("parameters", {})
+        tags = params.get("tags", {}).get("value", [])
+        attributes = params.get("attributes", {}).get("value", {})
         
         # fix attr (currently no good support for parameter on the server side)
         attr = {}
@@ -31,6 +31,6 @@ def extract_labels_and_attributes_from_snapshot(snapshot : dict) -> Tuple[List[s
             else:
                 attr[key] = value
         
-        return labels, attr
+        return tags, attr
     except Exception as e:
         raise MetaDataExtractionError("Could not extract labels and attributes from snapshot.") from e

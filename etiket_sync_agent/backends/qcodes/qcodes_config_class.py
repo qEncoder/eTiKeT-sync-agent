@@ -9,7 +9,7 @@ from etiket_sync_agent.db import get_db_session_context
 class QCoDeSConfigData:
     database_path: pathlib.Path
     set_up : str
-    extra_attributes : Optional[dict] = dataclasses.field(default_factory=dict)
+    static_attributes : Optional[dict] = dataclasses.field(default_factory=dict)
     
     def validate(self, current_sync_source : Optional[SyncSources] = None):
         """
