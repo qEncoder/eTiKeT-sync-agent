@@ -27,7 +27,6 @@ class ManifestStateV1:
         if self.is_NFS:
             self._start_nfs_worker(self.current_manifest)
         else:
-            print("starting local observer")
             self.local_observer = dataset_poller_local(self.root_path, self.current_manifest, self.update_queue,
                                                         self.level, self.is_single_file)
 

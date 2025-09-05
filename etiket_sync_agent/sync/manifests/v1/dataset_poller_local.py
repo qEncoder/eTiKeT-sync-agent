@@ -28,14 +28,11 @@ def dataset_poller_local(root_path : Path, current_manifest: Dict[str, float],
     Returns:
         Optional[BaseObserver] : the observer if enabled, None otherwise. Don't forget to stop the observer after use!
     '''
-    print("looping over dataset_explorer_full")
     for key_name, ds_mod_time in dataset_explorer_full(root_path, level, is_single_file):
-        print(f"adding update: {key_name} {ds_mod_time}")
         enqueue_updates(update_queue, current_manifest, {key_name: ds_mod_time})
     
     observer = None
     if enable_watcher:
-        print("starting observer")
         observer = Observer()
         observer.schedule(ManifestV1Watcher(root_path, update_queue, current_manifest, level, is_single_file), str(root_path), recursive=True)
         observer.start()
@@ -72,7 +69,6 @@ class ManifestV1Watcher(FileSystemEventHandler):
                 dataset_dir = self.root_path.joinpath(*path_parts)
                 try:
                     mod_time = dataset_get_mod_time(str(dataset_dir))
-                    print(f"adding update (real time): {key_name} {mod_time}")
                     enqueue_updates(self.update_queue, self.current_manifest, {key_name: mod_time})
                 except FileNotFoundError:
                     return
