@@ -5,7 +5,7 @@ from etiket_sync_agent.models.enums import SyncSourceTypes
 from etiket_sync_agent.db import get_db_session_context
 
 @dataclasses.dataclass
-class FileBaseConfigData:
+class FolderBaseConfigData:
     root_directory: pathlib.Path
     server_folder : bool
     
@@ -15,7 +15,7 @@ class FileBaseConfigData:
 
         Checks:
         1. If the root_directory exists and is a directory.
-        2. If the root_directory conflicts with an existing filebase sync source
+        2. If the root_directory conflicts with an existing folderbase sync source
             (i.e., it's identical, a subdirectory, or a parent directory).
 
         Raises:

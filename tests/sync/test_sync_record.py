@@ -284,9 +284,9 @@ def test_file_upload_with_converter(sync_item):
     file_name = "converted_file.zarr"
     
     with record.add_upload_task(file_name) as file_upload_info:
-        file_upload_info.status = dsrc.FileStatus.OK
         with record.define_converter(file_upload_info, dummy_converter) as converter_info:
             converter_info.status = dsrc.FileStatus.OK
+        file_upload_info.status = dsrc.FileStatus.OK
 
     assert file_name in record.record.files
     uploaded_file_info = record.record.files[file_name][0]
@@ -318,9 +318,10 @@ def test_file_upload_with_converter_error(sync_item):
     
     with pytest.raises(dsrc.DataConvertorException):
         with record.add_upload_task(file_name) as file_upload_info:
-            file_upload_info.status = dsrc.FileStatus.OK
             with record.define_converter(file_upload_info, dummy_converter) as converter_info:
                 raise ValueError("Conversion failed")
+            file_upload_info.status = dsrc.FileStatus.OK
+
 
     uploaded_file_info = record.record.files[file_name][0]
     assert uploaded_file_info.converter is not None
@@ -377,11 +378,11 @@ Tests for the file upload info.
 - make a file for a file upload --> fill information partially and call an error --> check if the error is present in the record.
                                 --> also check if in the logs, the task is registered correctly (with errors).
 - make a file upload twice, check that there are two entries in the file record --> check if their content is as expected.
-- make a file for a file upload --> add a converter (e.g. etiket_sync_agent.backends.filebase.converters.zarr_to_netcdf.ZarrToNetcdfConverter)
+- make a file for a file upload --> add a converter (e.g. etiket_sync_agent.backends.folderbase.converters.zarr_to_netcdf.ZarrToNetcdfConverter)
                                 --> afterwards also the file info.
-- make a file for a file upload --> add a converter (e.g. etiket_sync_agent.backends.filebase.converters.zarr_to_netcdf.ZarrToNetcdfConverter)
+- make a file for a file upload --> add a converter (e.g. etiket_sync_agent.backends.folderbase.converters.zarr_to_netcdf.ZarrToNetcdfConverter)
                                 --> error happens in the convertion step --> check if the error is present in the file record.
-- make a file for a file upload --> add a converter (e.g. etiket_sync_agent.backends.filebase.converters.zarr_to_netcdf.ZarrToNetcdfConverter)
+- make a file for a file upload --> add a converter (e.g. etiket_sync_agent.backends.folderbase.converters.zarr_to_netcdf.ZarrToNetcdfConverter)
                                 --> error happens in the upload step (after the converter) --> check if the error is present in the file record.
                                 --> check also if the logs are registered correctly (add a few logs in btween, a task should be present for upload and converter)
 '''

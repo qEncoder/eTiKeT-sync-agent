@@ -1,4 +1,4 @@
-import datetime
+import datetime, traceback
 
 from typing import Optional, Callable
 from datetime import timezone
@@ -55,7 +55,7 @@ class SyncRecordManager:
         except Exception as e:
             if not error_in_children(e, task):
                 # do not propagate the stacktrace to all levels.
-                self.add_error(str(e), e)
+                self.add_error(str(e), e, traceback.format_exc())
             else:
                 # if child task fails, parent also shows the error.
                 task.has_errors = True
@@ -96,26 +96,26 @@ class SyncRecordManager:
         self.record.add_log_item(self.__current_log, log_entry)
         
     @contextmanager
-    def add_upload_task(self, file_name : str):
+    def add_upload_task(self, name : str):
         '''
         Declare a file upload.
         
         Args:
-            file_name (str): The name of the file.
+            file_name (str): The name of the file (not to be confused with the filename).
         
         Example usage:
-        with sync_record.add_upload_task("file_name") as file_upload_info:
+        with sync_record.add_upload_task("name") as file_upload_info:
             set vars :
                 file_upload_info.file_path = Path("path/to/file")
                 ...
             # if an error is raised, it will be added to the sync record automatically.
         
         '''
-        file_upload_info = FileUploadInfo(filename = file_name)
-        self.record.files[file_name] = self.record.files.get(file_name, [])
-        self.record.files[file_name].append(file_upload_info)
+        file_upload_info = FileUploadInfo(filename = name)
+        self.record.files[name] = self.record.files.get(name, [])
+        self.record.files[name].append(file_upload_info)
         
-        with self.task(f"upload {file_name}"):
+        with self.task(f"upload {name}"):
             try:
                 yield file_upload_info
             except DataConvertorException as e:
@@ -129,7 +129,7 @@ class SyncRecordManager:
         file_upload_info.status = FileStatus.OK
     
     @contextmanager
-    def define_converter(self, file_upload_info : FileUploadInfo, converter_method : Callable):
+    def define_converter(self, file_upload_info : FileUploadInfo, converter_method : Callable, *args, **kwargs):
         '''
         Declare a converter.
         
@@ -146,7 +146,8 @@ class SyncRecordManager:
         
         with self.task(f"convert {data_convertor.method} called"):
             try:
-                yield data_convertor
+                with converter_method(*args, **kwargs) as result:
+                    yield result
             except Exception as e:
                 data_convertor.status = FileStatus.ERROR
                 data_convertor.error = str(e)

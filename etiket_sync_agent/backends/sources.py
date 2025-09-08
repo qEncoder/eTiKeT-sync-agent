@@ -11,19 +11,19 @@ def get_mapping() -> tuple[dict[SyncSourceTypes, Type[SyncSourceDatabaseBase]|Ty
     from etiket_sync_agent.backends.quantify.quantify_sync_class import QuantifySync, QuantifyConfigData
     from etiket_sync_agent.backends.qcodes.qcodes_sync_class import QCoDeSSync, QCoDeSConfigData
     from etiket_sync_agent.backends.core_tools.core_tools_sync_class import CoreToolsSync, CoreToolsConfigData
-    from etiket_sync_agent.backends.filebase.filebase_sync_class import FileBaseSync, FileBaseConfigData
+    from etiket_sync_agent.backends.folderbase.folderbase_sync_class import FolderBaseSync, FolderBaseConfigData
 
     type_mapping = {SyncSourceTypes.native : NativeSync,
                     SyncSourceTypes.quantify : QuantifySync,
                     SyncSourceTypes.qcodes : QCoDeSSync,
                     SyncSourceTypes.coretools : CoreToolsSync,
-                    SyncSourceTypes.fileBase : FileBaseSync}
+                    SyncSourceTypes.fileBase : FolderBaseSync}
 
     config_mapping = {SyncSourceTypes.native : NativeConfigData,
                         SyncSourceTypes.quantify : QuantifyConfigData,
                         SyncSourceTypes.qcodes : QCoDeSConfigData,
                         SyncSourceTypes.coretools : CoreToolsConfigData,
-                        SyncSourceTypes.fileBase : FileBaseConfigData}
+                        SyncSourceTypes.fileBase : FolderBaseConfigData}
 
     return type_mapping, config_mapping
 
@@ -33,7 +33,7 @@ def detect_type(sync_class, sync_config) -> SyncSourceTypes:
     from etiket_sync_agent.backends.quantify.quantify_sync_class import QuantifySync, QuantifyConfigData
     from etiket_sync_agent.backends.qcodes.qcodes_sync_class import QCoDeSSync, QCoDeSConfigData
     from etiket_sync_agent.backends.core_tools.core_tools_sync_class import CoreToolsSync, CoreToolsConfigData
-    from etiket_sync_agent.backends.filebase.filebase_sync_class import FileBaseSync, FileBaseConfigData
+    from etiket_sync_agent.backends.folderbase.folderbase_sync_class import FolderBaseSync, FolderBaseConfigData
     
     
     if sync_class == QuantifySync and isinstance(sync_config, QuantifyConfigData):
@@ -42,7 +42,7 @@ def detect_type(sync_class, sync_config) -> SyncSourceTypes:
         return SyncSourceTypes.qcodes
     elif sync_class == CoreToolsSync and isinstance(sync_config, CoreToolsConfigData):
         return SyncSourceTypes.coretools
-    elif sync_class == FileBaseSync and isinstance(sync_config, FileBaseConfigData):
+    elif sync_class == FolderBaseSync and isinstance(sync_config, FolderBaseConfigData):
         return SyncSourceTypes.fileBase
     elif sync_class == NativeSync and isinstance(sync_config, NativeConfigData):
         return SyncSourceTypes.native

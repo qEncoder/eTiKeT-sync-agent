@@ -187,7 +187,7 @@ class DatasetSyncRecordData:
     sync_time: datetime.datetime = field(default_factory=utc_now)
     files: Dict[str, List["FileUploadInfo"]] = field(default_factory=dict)
     logs: List[LogItem] = field(default_factory=list)
-
+    
     def to_dict(self):
         return {
             "version": self.version,

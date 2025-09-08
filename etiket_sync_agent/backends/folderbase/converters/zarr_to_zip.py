@@ -1,4 +1,4 @@
-from etiket_sync_agent.backends.filebase.converters.base import FileConverter
+from etiket_sync_agent.backends.folderbase.converters.base import FileConverter
 
 import shutil, pathlib
 

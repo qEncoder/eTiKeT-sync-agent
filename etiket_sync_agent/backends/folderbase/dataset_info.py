@@ -1,5 +1,5 @@
-from etiket_sync_agent.backends.filebase.converters.base import FileConverter
-from etiket_sync_agent.backends.filebase.manifest_v2 import QH_DATASET_INFO_FILE
+from etiket_sync_agent.backends.folderbase.converters.base import FileConverter
+from etiket_sync_agent.backends.folderbase.manifest_v2 import QH_DATASET_INFO_FILE
 
 from typing import Union, Optional, List, Dict, Type
 

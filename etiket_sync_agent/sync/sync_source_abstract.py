@@ -1,30 +1,24 @@
 from abc import ABC, abstractmethod
-from typing import Any, Type, List
+from typing import Any, Type, List, ClassVar
 from pathlib import Path
 
 from etiket_sync_agent.models.sync_items import SyncItems
 from etiket_sync_agent.sync.sync_records.manager import SyncRecordManager
 
 class SyncSourceBase(ABC):
-    @property
-    @abstractmethod
-    def SyncAgentName(self) -> str:
-        raise NotImplementedError
+    SyncAgentName: ClassVar[str]
+    config_data_class: ClassVar[Type[Any]]
+    MapToASingleScope: ClassVar[bool]
     
-    @property
-    @abstractmethod
-    def MapToASingleScope(self) -> bool:
-        raise NotImplementedError
-    
-    @property
-    @abstractmethod
-    def LiveSyncImplemented(self) -> bool:
-        return False
-    
-    @classmethod
-    @abstractmethod
-    def config_data_class(cls) -> Type[Any]:
-        raise NotImplementedError
+    def __init_subclass__(cls) -> None:
+        super().__init_subclass__()
+        # check if class variables are set
+        if not isinstance(getattr(cls, "SyncAgentName", None), str) or not cls.SyncAgentName:
+            raise TypeError("SyncAgentName must be a non-empty str")
+        if not isinstance(getattr(cls, "config_data_class", None), type):
+            raise TypeError("config_data_class must be a type")
+        if not isinstance(getattr(cls, "MapToASingleScope", None), bool):
+            raise TypeError("MapToASingleScope must be a bool")
 
     @staticmethod
     @abstractmethod
@@ -46,15 +40,17 @@ class SyncSourceBase(ABC):
         return cls.config_data_class(**config_data)
 
 class SyncSourceFileBase(SyncSourceBase):
-    @property
-    @abstractmethod
-    def level(self) -> int:
-        raise NotImplementedError
+    level: ClassVar[int]
     
     @staticmethod
     @abstractmethod
     def rootPath(configData: Any) -> Path:
         raise NotImplementedError
+    
+    def __init_subclass__(cls) -> None:
+        super().__init_subclass__()
+        if not isinstance(getattr(cls, "level", None), int):
+            raise TypeError("Level must be an int.")
 
 class SyncSourceDatabaseBase(SyncSourceBase):
     @staticmethod
