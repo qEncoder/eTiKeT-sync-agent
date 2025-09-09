@@ -25,25 +25,29 @@ class LocalSyncRecord:
                                                 syncIdentifier.datasetUUID,
                                                 syncIdentifier.scopeUUID)
         if self.local_record_path.exists():
-            try :
-                with open(self.local_record_path, 'r', encoding="utf-8") as f:
-                    local_record = yaml.safe_load(f)
-                # if the scope uuid is the same as the updated scope uuid, update the manifest
-                if local_record.get('scope_uuid', None) == str(syncIdentifier.scopeUUID):
-                    self.local_record = local_record
-                    manifest_dataset_uuid = self.local_record.get('dataset_uuid', None)
-                    manifest_scope_uuid = self.local_record.get('scope_uuid', None)
+            with open(self.local_record_path, 'r', encoding="utf-8") as f:
+                local_record = yaml.safe_load(f)
+            # if the scope uuid is the same as the updated scope uuid, update the manifest
+            manifest_dataset_path = local_record.get('dataset_sync_path', None)
+            manifest_dataset_uuid = local_record.get('dataset_uuid', None)
+            manifest_scope_uuid = local_record.get('scope_uuid', None)
+                
+            if manifest_scope_uuid == str(syncIdentifier.scopeUUID):
+                self.local_record = local_record
+                
+                if Path(manifest_dataset_path) == dataset_path:
                     if manifest_dataset_uuid is not None:
                         if manifest_dataset_uuid != str(syncIdentifier.datasetUUID):
-                            if str(syncIdentifier.scopeUUID) == manifest_scope_uuid:
-                                with get_db_session_context() as session:
-                                    crud_sync_items.update_sync_item(session, syncIdentifier.id, dataset_uuid=uuid.UUID(manifest_dataset_uuid))
-            except UpdateSyncDatasetUUIDException as e:
-                self.write()
-                raise e # the sync process should be stopped
-            except (yaml.YAMLError, IOError) as e:
-                self.local_record['errors'].append(f"Error loading previous manifest: {str(e)}")
-
+                            with get_db_session_context() as session:
+                                crud_sync_items.update_sync_item(session, syncIdentifier.id, dataset_uuid=uuid.UUID(manifest_dataset_uuid))
+                            # update the dataset uuid
+                            self.local_record['dataset_uuid'] = manifest_dataset_uuid
+                else:
+                    self.local_record['dataset_sync_path'] = str(dataset_path)
+                    self.local_record['dataset_uuid'] = str(syncIdentifier.datasetUUID)
+        
+        self.write()
+    
     def write(self):
         with open(self.local_record_path, 'w', encoding="utf-8") as f:
             self.local_record['files'] = self.sync_record.to_dict()['files']

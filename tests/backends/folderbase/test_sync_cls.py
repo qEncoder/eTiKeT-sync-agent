@@ -64,6 +64,11 @@ make a zarr file with two variables (e.g. with xarray) (e.g. files/data.zarr).
 
 # legacy test, check if created and keywords is recognized (replace in the yaml file the keys collected and tags), e.g. load the yaml, then change them and save again.
 --> check if the collected and tags are are in the dataset as expected when reading it.
+
+# test uploading the dataset and then copying the folder.
+--> upload the folder first, then move it (e.g. /root/folder1 to /root/folder2)
+--> the sync agent should upload the folder again, the uuid of the dataset should change (and also the dataset_sync_path), and this should be reflected in the .QH_manifest.yaml file.
+
 '''
 
 import os, uuid, tempfile, yaml, datetime, shutil, pytest
@@ -305,7 +310,6 @@ def test_csv_converter_idempotency_and_versioning(get_scope_uuid: uuid.UUID, ser
         assert counts_3['files/data.hdf5'] == after_counts['files/data.hdf5'] + 1
         assert counts_3['files/data.csv'] == after_counts['files/data.csv'] + 1
 
-
 @pytest.mark.parametrize("server_folder", [False])
 def test_zarr_converter_only_output_uploaded(get_scope_uuid: uuid.UUID, server_folder: bool):
     with tempfile.TemporaryDirectory() as temp_root:
@@ -423,7 +427,7 @@ def test_dataset_info_yaml_updates_remote_dataset(get_scope_uuid: uuid.UUID, ser
 
 @pytest.mark.parametrize("server_folder", [False])
 def test_dataset_uuid_resolution_same_scope_manifest(db_session, get_scope_uuid: uuid.UUID, server_folder: bool):
-    sync_source_id = None
+    sync_source_id_1 = None
     try:
         with tempfile.TemporaryDirectory() as temp_root:
             root = Path(temp_root)
@@ -466,18 +470,14 @@ def test_dataset_uuid_resolution_same_scope_manifest(db_session, get_scope_uuid:
 
             # First sync with first UUID (Dummy carries DB id and scope)
             config = FolderBaseConfigData(root_directory=root, server_folder=server_folder)
-            s_item_1 = DummySyncItem(first_uuid, ds_name, scope_uuid)
-            s_item_1.id = s_item_db.id
-            sync_record_1 = SyncRecordManager(s_item_1)
-            FolderBaseSync.syncDatasetNormal(config, s_item_1, sync_record_1)
+            sync_record_1 = SyncRecordManager(s_item_db)
+            FolderBaseSync.syncDatasetNormal(config, s_item_db, sync_record_1)
 
             # give it a fake uuid --> check if it updates it
             second_uuid = uuid.uuid4()
-            s_item_db = crud_sync_items.update_sync_item(db_session, s_item_1.id, dataset_uuid=second_uuid)
-            s_item_2 = DummySyncItem(second_uuid, ds_name, scope_uuid)
-            s_item_2.id = s_item_db.id
-            sync_record_2 = SyncRecordManager(s_item_2)
-            FolderBaseSync.syncDatasetNormal(config, s_item_2, sync_record_2)
+            s_item_db = crud_sync_items.update_sync_item(db_session, s_item_db.id, dataset_uuid=second_uuid)
+            sync_record_2 = SyncRecordManager(s_item_db)
+            FolderBaseSync.syncDatasetNormal(config, s_item_db, sync_record_2)
 
             # Verify database sync item UUID is reset to manifest UUID (first_uuid)
             db_session.refresh(s_item_db)
@@ -490,7 +490,7 @@ def test_dataset_uuid_resolution_same_scope_manifest(db_session, get_scope_uuid:
             assert manifest.get('dataset_uuid') == str(first_uuid)
             assert manifest.get('scope_uuid') == str(scope_uuid)
     finally:
-        if sync_source_id_1:
+        if sync_source_id_1 is not None:
             crud_sync_sources.delete_sync_source(db_session, sync_source_id_1)
         db_session.commit()
 
@@ -583,9 +583,9 @@ def test_dataset_uuid_resolution_different_scope_manifest(db_session, get_scope_
             assert manifest.get('scope_uuid') == str(get_other_scope_uuid)
             assert manifest.get('dataset_uuid') == str(second_uuid)
     finally:
-        if sync_source_id_1:
+        if sync_source_id_1 is not None:
             crud_sync_sources.delete_sync_source(db_session, sync_source_id_1)
-        if sync_source_id_2:
+        if sync_source_id_2 is not None:
             crud_sync_sources.delete_sync_source(db_session, sync_source_id_2)
         db_session.commit()
 
@@ -620,3 +620,105 @@ def test_legacy_created_and_keywords_keys(get_scope_uuid: uuid.UUID, server_fold
         ds_remote = dataset_read(ds_uuid)
         assert set(ds_remote.keywords) == set(['k1', 'k2'])
         assert ds_remote.attributes.get('x') == '1'
+
+
+@pytest.mark.parametrize("server_folder", [False])
+def test_move_or_copy_folder_creates_new_dataset_uuid(db_session, get_scope_uuid: uuid.UUID, server_folder: bool):
+    sync_source_id = None
+    try:
+        with tempfile.TemporaryDirectory() as temp_root:
+            root = Path(temp_root)
+            scope_uuid = get_scope_uuid
+
+            # Create a real sync source
+            source = SyncSources(
+                name=f"src_{uuid.uuid4()}",
+                type=SyncSourceTypes.fileBase,
+                status=SyncSourceStatus.SYNCHRONIZING,
+                creator="test",
+                config_data={"root_directory": str(root)},
+                default_scope=scope_uuid,
+            )
+            db_session.add(source)
+            db_session.commit()
+            db_session.refresh(source)
+            sync_source_id = source.id
+
+            # Initial dataset folder and sync using DB-backed sync item
+            ds_name_1 = 'folder1'
+            ds_uuid_1 = uuid.uuid4()
+            dataset_dir_1 = root / ds_name_1
+            dataset_dir_1.mkdir(parents=True, exist_ok=True)
+            create_file(dataset_dir_1, 'file.txt', 'content')
+            write_dataset_info(dataset_dir_1, ds_name_1, datetime.datetime.now(), 'initial desc')
+
+            s_item_db1 = SyncItems(
+                dataIdentifier=ds_name_1,
+                datasetUUID=ds_uuid_1,
+                syncPriority=datetime.datetime.now().timestamp(),
+                sync_source_id=source.id,
+            )
+            crud_sync_items.create_sync_items(db_session, source.id, [s_item_db1])
+            s_item_db1 = db_session.query(SyncItems).filter(
+                SyncItems.sync_source_id == source.id,
+                SyncItems.dataIdentifier == ds_name_1
+            ).first()
+            assert s_item_db1 is not None
+
+            config = FolderBaseConfigData(root_directory=root, server_folder=server_folder)
+            sync_record_1 = SyncRecordManager(s_item_db1)
+            FolderBaseSync.syncDatasetNormal(config, s_item_db1, sync_record_1)
+
+            # Ensure first manifest exists and points to folder1
+            manifest_path_1 = dataset_dir_1 / QH_MANIFEST_FILE
+            assert manifest_path_1.exists()
+            with open(manifest_path_1, 'r', encoding='utf-8') as f:
+                manifest_1 = yaml.safe_load(f)
+            assert manifest_1.get('dataset_uuid') == str(ds_uuid_1)
+            assert manifest_1.get('dataset_sync_path') == str(dataset_dir_1)
+
+            # Copy/move dataset to folder2, EXCLUDING the manifest to force a new dataset
+            ds_name_2 = 'folder2'
+            dataset_dir_2 = root / ds_name_2
+            dataset_dir_2.mkdir(parents=True, exist_ok=True)
+            for dirpath, dirnames, filenames in os.walk(dataset_dir_1):
+                rel_dir = Path(dirpath).relative_to(dataset_dir_1)
+                target_dir = dataset_dir_2 / rel_dir
+                target_dir.mkdir(parents=True, exist_ok=True)
+                for filename in filenames:
+                    src = Path(dirpath) / filename
+                    dst = target_dir / filename
+                    shutil.copy2(src, dst)
+
+            # Re-sync as a new dataset with a new UUID using a new DB-backed sync item
+            ds_uuid_2 = uuid.uuid4()
+            s_item_db2 = SyncItems(
+                dataIdentifier=ds_name_2,
+                datasetUUID=ds_uuid_2,
+                syncPriority=datetime.datetime.now().timestamp(),
+                sync_source_id=source.id,
+            )
+            crud_sync_items.create_sync_items(db_session, source.id, [s_item_db2])
+            s_item_db2 = db_session.query(SyncItems).filter(
+                SyncItems.sync_source_id == source.id,
+                SyncItems.dataIdentifier == ds_name_2
+            ).first()
+            assert s_item_db2 is not None
+            sync_record_2 = SyncRecordManager(s_item_db2)
+            FolderBaseSync.syncDatasetNormal(config, s_item_db2, sync_record_2)
+
+            # Assert a new manifest exists for folder2 with new UUID and updated path         
+            manifest_path_2 = dataset_dir_2 / QH_MANIFEST_FILE
+            with open(manifest_path_2, 'r', encoding='utf-8') as f:
+                manifest_2 = yaml.safe_load(f)
+            assert manifest_path_2.exists()
+            assert manifest_2.get('dataset_uuid') == str(ds_uuid_2)
+            assert manifest_2.get('dataset_sync_path') == str(dataset_dir_2)
+
+            # Remote dataset for the new UUID should exist
+            ds_remote_2 = dataset_read(ds_uuid_2)
+            assert ds_remote_2 is not None
+    finally:
+        if sync_source_id is not None:
+            crud_sync_sources.delete_sync_source(db_session, sync_source_id)
+        db_session.commit()
