@@ -45,7 +45,6 @@ class FolderBaseSync(SyncSourceFileBase):
             
             local_sync_record = LocalSyncRecord(dataset_path, syncIdentifier, sync_record)
         
-        # TODO check traversal --> unnecessary if skip is used
         try:
             with sync_record.task("Create or update dataset."):
                 create_or_update_dataset(configData, syncIdentifier, sync_info, sync_record)
@@ -55,18 +54,28 @@ class FolderBaseSync(SyncSourceFileBase):
                 skip = sync_info.get('skip', [])
                 skip_folders = ["*.zarr"]
                 
-                for root, _, files in os.walk(dataset_path):
-                    # Do not check files in the skip_folders
-                    if not any(fnmatch.fnmatch(root, pattern) or fnmatch.fnmatch(root, f"{pattern}/*") for pattern in skip_folders):
-                        for file in files:
-                            if not any(fnmatch.fnmatch(file, pattern) for pattern in skip):
-                                upload_file(root, file, dataset_path, syncIdentifier, sync_record, file_converters)
-                            else:
-                                logger.info(f"File {file} is skipped, as per the skip list.")
-                    # do allow folder uploads if a converter is present
-                    if any(fnmatch.fnmatch(root, pattern) for pattern in skip_folders):
-                        folder_name =  os.path.basename(root)
-                        upload_folder(root, dataset_path, syncIdentifier, sync_record, file_converters)
+                def walk_dataset(current_folder : Path):
+                    for dir_entry in os.scandir(current_folder):
+                        dir_path = Path(dir_entry)
+                        name = dir_path.name
+                        if name.startswith('.') or name in [QH_DATASET_INFO_FILE, QH_MANIFEST_FILE]:
+                            continue
+                        rel_path = dir_path.relative_to(dataset_path).as_posix()
+                        if dir_entry.is_dir(follow_symlinks=False):
+                            if dir_path.suffix is not "" and not any(fnmatch.fnmatch(rel_path, pattern) for pattern in skip): # must have a suffix (e.g. .zarr)
+                                upload_folder(dir_path, dataset_path, syncIdentifier, sync_record, file_converters)
+                                    
+                            if any(fnmatch.fnmatch(rel_path, pattern) for pattern in skip_folders + skip):
+                                sync_record.add_log(f"Folder {rel_path} is skipped, as per the skip list.")
+                                continue
+                            walk_dataset(dir_path)
+                        else:
+                            if any(fnmatch.fnmatch(rel_path, pattern) for pattern in skip):
+                                sync_record.add_log(f"File {rel_path} is skipped, as per the skip list.")
+                                continue
+                            upload_file(dir_path, dataset_path, syncIdentifier, sync_record, file_converters)
+                            
+                walk_dataset(dataset_path)
         finally:
             local_sync_record.write()
     @staticmethod
@@ -100,16 +109,21 @@ def create_or_update_dataset(configData : FolderBaseConfigData, syncIdentifier :
     
     if 'created' in sync_info:
         try :
-            created_time_str = sync_info['created']
+            # get collected, and if not present, get created
+            created_time_str = sync_info.get('collected', None) 
+            if created_time_str is None:
+                created_time_str = sync_info.get('created', None) 
             created = datetime.strptime(created_time_str, '%Y-%m-%dT%H:%M:%S')
         except Exception:
             pass
-        
-    keywords = sync_info.get('keywords', [])
+    
+    tags = sync_info.get('tags', None)
+    if tags is None:
+        tags = sync_info.get('keywords', [])
     ds_info =  dataset_info(name = name, datasetUUID = syncIdentifier.datasetUUID,
                 alt_uid = None, scopeUUID = syncIdentifier.scopeUUID,
                 description=description,
-                created = created, keywords = list(keywords), 
+                created = created, keywords = list(tags), 
                 attributes = attributes)
     
     sync_utilities.create_or_update_dataset(False, syncIdentifier, ds_info, sync_record)
@@ -151,10 +165,10 @@ def generate_converted_file_name(dataset_path : Path, current_path : Path, new_e
         new_name = relative_path.parent / f"{relative_path.name}.{new_extension}"
     return str(new_name)
 
-def upload_file(root : str, file : str, dataset_path : pathlib.Path,
+def upload_file(file_path : Path, dataset_path : pathlib.Path,
                 syncIdentifier : SyncItems, sync_record: SyncRecordManager,
                 file_converters : Dict[str, List[FileConverterHelper]]):
-    file_path = pathlib.Path(root) / file
+    file = file_path.name
     name = process_name(dataset_path, file_path)
     if file in [QH_DATASET_INFO_FILE, QH_MANIFEST_FILE] or file.startswith('.'):
         return
@@ -162,7 +176,7 @@ def upload_file(root : str, file : str, dataset_path : pathlib.Path,
     f_type = get_file_type(file_path)
     
     f_info = file_info(name = name, fileName = file,
-        created = datetime.fromtimestamp(pathlib.Path(os.path.join(root, file)).stat().st_mtime),
+        created = datetime.fromtimestamp(file_path.stat().st_mtime),
         fileType = f_type, file_generator = "")
     sync_utilities.upload_file(file_path, syncIdentifier, f_info, sync_record)
 
@@ -172,7 +186,7 @@ def upload_file(root : str, file : str, dataset_path : pathlib.Path,
         for converterHelper in file_converters[extension]:
             converted_file_name = generate_converted_file_name(dataset_path, file_path, converterHelper.converter.output_type)
             with sync_record.add_upload_task(converted_file_name) as file_upload_info:
-                with sync_record.define_converter(file_upload_info, converterHelper.converter, file_path) as converted_file_path:
+                with sync_record.define_converter(file_upload_info, converterHelper, file_path) as converted_file_path:
                     f_type = get_file_type(converted_file_path)
                     f_info = file_info(name = converted_file_name, fileName = converted_file_path.name,
                                 created = datetime.now(),
@@ -180,19 +194,19 @@ def upload_file(root : str, file : str, dataset_path : pathlib.Path,
                 
                     sync_utilities.upload_file(converted_file_path, syncIdentifier, f_info, sync_record)
 
-def upload_folder(root : str, dataset_path : pathlib.Path, syncIdentifier : SyncItems, sync_record: SyncRecordManager,
+def upload_folder(folder_path : str, dataset_path : pathlib.Path, syncIdentifier : SyncItems, sync_record: SyncRecordManager,
                 file_converters : Dict[str, List[FileConverterHelper]]):
     '''
     Function that uploads the contents of a folder as a file. Currently, this is only needed for zarr files.
     '''
-    folder_path = pathlib.Path(root)    
+    folder_path = pathlib.Path(folder_path)    
     extension = folder_path.suffix[1:]
 
     if extension in file_converters:
         for converterHelper in file_converters[extension]:
             converted_file_name = generate_converted_file_name(dataset_path, folder_path, converterHelper.converter.output_type)
             with sync_record.add_upload_task(converted_file_name) as file_upload_info:
-                with sync_record.define_converter(file_upload_info, converterHelper.converter, folder_path) as converted_file_path:
+                with sync_record.define_converter(file_upload_info, converterHelper, folder_path) as converted_file_path:
                     f_type = get_file_type(converted_file_path)
                     f_info = file_info(name = converted_file_name, fileName = converted_file_path.name,
                                 created = datetime.now(),

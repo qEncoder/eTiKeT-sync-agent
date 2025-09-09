@@ -2,9 +2,9 @@ from etiket_sync_agent.exceptions.sync import UpdateSyncDatasetUUIDException
 from etiket_sync_agent.models.sync_items import SyncItems
 from etiket_sync_agent.sync.sync_records.manager import SyncRecordManager
 from etiket_sync_agent.sync.manifests.v2.definitions import QH_MANIFEST_FILE
-
+from etiket_sync_agent.crud.sync_items import crud_sync_items
+from etiket_sync_agent.db import get_db_session_context
 from pathlib import Path
-from typing import Optional
 
 import yaml, uuid, datetime
 
@@ -32,9 +32,12 @@ class LocalSyncRecord:
                 if local_record.get('scope_uuid', None) == str(syncIdentifier.scopeUUID):
                     self.local_record = local_record
                     manifest_dataset_uuid = self.local_record.get('dataset_uuid', None)
+                    manifest_scope_uuid = self.local_record.get('scope_uuid', None)
                     if manifest_dataset_uuid is not None:
                         if manifest_dataset_uuid != str(syncIdentifier.datasetUUID):
-                            syncIdentifier.updateDatasetUUID(uuid.UUID(manifest_dataset_uuid))
+                            if str(syncIdentifier.scopeUUID) == manifest_scope_uuid:
+                                with get_db_session_context() as session:
+                                    crud_sync_items.update_sync_item(session, syncIdentifier.id, dataset_uuid=uuid.UUID(manifest_dataset_uuid))
             except UpdateSyncDatasetUUIDException as e:
                 self.write()
                 raise e # the sync process should be stopped

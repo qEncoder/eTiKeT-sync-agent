@@ -8,6 +8,7 @@ from pathlib import Path
 from etiket_sync_agent.sync.sync_records.models import FileUploadInfo, DataConvertor, FileStatus,\
     DataConvertorException, TaskEntry, LogEntry, ErrorEntry, DatasetSyncRecordData
 from etiket_sync_agent.models.sync_items import SyncItems
+from etiket_sync_agent.backends.folderbase.converters.base import FileConverterHelper
 
 def utc_now_iso():
     return datetime.datetime.now(timezone.utc).isoformat()
@@ -129,7 +130,7 @@ class SyncRecordManager:
         file_upload_info.status = FileStatus.OK
     
     @contextmanager
-    def define_converter(self, file_upload_info : FileUploadInfo, converter_method : Callable, *args, **kwargs):
+    def define_converter(self, file_upload_info : FileUploadInfo, converter_helper : FileConverterHelper, *args, **kwargs):
         '''
         Declare a converter.
         
@@ -141,13 +142,12 @@ class SyncRecordManager:
         with sync_record.define_converter(file_upload_info, ) as data_convertor:
         '''
         # get fqn of the converter
-        data_convertor = DataConvertor.from_callable(converter_method, FileStatus.OK)
+        data_convertor = DataConvertor.from_callable(converter_helper.converter, FileStatus.OK)
         file_upload_info.converter = data_convertor
-        
         with self.task(f"convert {data_convertor.method} called"):
             try:
-                with converter_method(*args, **kwargs) as result:
-                    yield result
+                with converter_helper.convert(*args, **kwargs) as path_out:
+                    yield path_out
             except Exception as e:
                 data_convertor.status = FileStatus.ERROR
                 data_convertor.error = str(e)

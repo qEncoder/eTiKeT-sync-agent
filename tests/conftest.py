@@ -136,6 +136,24 @@ def get_scope_uuid(get_bucket_uuid : uuid.UUID) -> uuid.UUID:
     
     return scope_uuid
 
+@pytest.fixture(scope="session")
+def get_other_scope_uuid(get_bucket_uuid : uuid.UUID) -> uuid.UUID:
+    bucket_uuid = get_bucket_uuid
+    
+    # create a new scope:
+    from etiket_client.remote.endpoints.scope import scope_create, scope_read
+    from etiket_client.remote.endpoints.models.scope import ScopeCreate
+    
+    # change name to have the current datetime
+    scope_uuid = uuid.uuid4()
+    sc = ScopeCreate(name=f"test_scope_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
+                        description="test_scope", 
+                        uuid=scope_uuid,
+                        bucket_uuid=bucket_uuid)
+    scope_create(sc)
+    
+    return scope_uuid
+
 @pytest.fixture(scope="function")
 def session_etiket_client(set_up_etiket_session) -> Generator[Session, None, None]:
     from etiket_client.local.database import get_db_session_context

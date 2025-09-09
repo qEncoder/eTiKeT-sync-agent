@@ -1,4 +1,4 @@
-import uuid
+import uuid, typing
 
 from typing import Optional
 from datetime import datetime
@@ -11,6 +11,9 @@ from etiket_sync_agent.models.base import Base
 from etiket_sync_agent.models.enums import SyncSourceStatus, SyncSourceTypes
 from etiket_sync_agent.models.utility.functions import utcnow
 from etiket_sync_agent.models.utility.types import UtcDateTime, CompressedStr
+
+if typing.TYPE_CHECKING:
+    from etiket_sync_agent.models.sync_items import SyncItems
 
 class SyncSources(Base):
     __tablename__ = "sync_sources"
@@ -31,6 +34,8 @@ class SyncSources(Base):
     default_scope : Mapped[Optional[uuid.UUID]]
     
     errors : Mapped[list["SyncSourceErrors"]] = relationship(cascade="all, delete-orphan")
+    
+    sync_items : Mapped[list["SyncItems"]] = relationship(back_populates="sync_source")
     
 class SyncSourceErrors(Base):
     __tablename__ = "sync_source_errors"

@@ -81,13 +81,11 @@ def _wait_for_manifest(mm: manifest_manager, expected: Dict[str, float], timeout
     acc: Dict[str, float] = {}
     while time.monotonic() - start < timeout:
         updates = mm.get_updates()
-        print(f"got updates: {updates}")
         if updates:
             acc.update(updates)
         if acc == expected:
             return True
         time.sleep(0.02)
-        print("end while")
     # final check
     acc.update(mm.get_updates())
     print(acc, expected)

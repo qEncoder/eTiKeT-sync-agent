@@ -1,14 +1,18 @@
-import uuid
+import uuid, typing
 
 from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import ForeignKey, UniqueConstraint, Index, types
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from etiket_sync_agent.models.base import Base
 from etiket_sync_agent.models.utility.functions import utcnow
 from etiket_sync_agent.models.utility.types import UtcDateTime, CompressedJSON
+
+if typing.TYPE_CHECKING:
+    from etiket_sync_agent.models.sync_sources import SyncSources
+
 class SyncItems(Base):
     __tablename__  = "sync_items"
     
@@ -31,3 +35,9 @@ class SyncItems(Base):
     traceback : Mapped[Optional[str]] = mapped_column(types.Text)
     
     last_update : Mapped[datetime] = mapped_column(UtcDateTime, server_default=utcnow(), onupdate=utcnow())
+    
+    sync_source : Mapped["SyncSources"] = relationship("SyncSources", back_populates="sync_items")
+    
+    @property
+    def scopeUUID(self) -> uuid.UUID:
+        return self.sync_source.default_scope

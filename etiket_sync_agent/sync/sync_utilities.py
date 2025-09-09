@@ -52,7 +52,10 @@ class dataset_info:
         # Convert None to empty string for creator field
         if self.creator is None:
             self.creator = ""
-
+        
+        for k,v in self.attributes.items():
+            if not isinstance(v, str):
+                self.attributes[k] = str(v)
 @dataclasses.dataclass
 class file_info:
     name : str
@@ -320,10 +323,8 @@ def read_files(dataset_uuid : uuid.UUID, file_name : str) -> Tuple[Dict[int, Fil
     
     with get_db_session_context_etiket() as session:
         try:
-            print(dataset_uuid, file_name)
             l_files_list = dao_file.get_file_by_name(dataset_uuid, file_name, session=session)
             l_files = {file.version_id : FileReadLocal.model_validate(file) for file in l_files_list}
-            print(l_files)
         except DatasetNotFoundException:
             pass
     

@@ -1,3 +1,5 @@
+import dataclasses
+
 from abc import ABC, abstractmethod
 from typing import Any, Type, List, ClassVar
 from pathlib import Path
@@ -7,18 +9,8 @@ from etiket_sync_agent.sync.sync_records.manager import SyncRecordManager
 
 class SyncSourceBase(ABC):
     SyncAgentName: ClassVar[str]
-    config_data_class: ClassVar[Type[Any]]
+    ConfigDataClass: ClassVar[Type[Any]]
     MapToASingleScope: ClassVar[bool]
-    
-    def __init_subclass__(cls) -> None:
-        super().__init_subclass__()
-        # check if class variables are set
-        if not isinstance(getattr(cls, "SyncAgentName", None), str) or not cls.SyncAgentName:
-            raise TypeError("SyncAgentName must be a non-empty str")
-        if not isinstance(getattr(cls, "config_data_class", None), type):
-            raise TypeError("config_data_class must be a type")
-        if not isinstance(getattr(cls, "MapToASingleScope", None), bool):
-            raise TypeError("MapToASingleScope must be a bool")
 
     @staticmethod
     @abstractmethod
@@ -37,8 +29,15 @@ class SyncSourceBase(ABC):
     
     @classmethod
     def sync_config(cls, config_data: dict) -> Any:
-        return cls.config_data_class(**config_data)
+        return cls.ConfigDataClass(**config_data)
 
+def _check_config_base(cls: Type[SyncSourceBase]) -> None:
+    if not isinstance(getattr(cls, "SyncAgentName", None), str) or not cls.SyncAgentName:
+        raise TypeError("SyncAgentName must be a non-empty str")
+    if not dataclasses.is_dataclass(getattr(cls, "ConfigDataClass", None)):
+        raise TypeError("ConfigDataClass must be a dataclass")
+    if not isinstance(getattr(cls, "MapToASingleScope", None), bool):
+        raise TypeError("MapToASingleScope must be a bool")
 class SyncSourceFileBase(SyncSourceBase):
     level: ClassVar[int]
     
@@ -49,6 +48,7 @@ class SyncSourceFileBase(SyncSourceBase):
     
     def __init_subclass__(cls) -> None:
         super().__init_subclass__()
+        _check_config_base(cls)
         if not isinstance(getattr(cls, "level", None), int):
             raise TypeError("Level must be an int.")
 
@@ -57,3 +57,7 @@ class SyncSourceDatabaseBase(SyncSourceBase):
     @abstractmethod
     def getNewDatasets(config_data: Any, last_sync_item: SyncItems | None) -> List[SyncItems]:
         raise NotImplementedError
+
+    def __init_subclass__(cls) -> None:
+        super().__init_subclass__()
+        _check_config_base(cls)
