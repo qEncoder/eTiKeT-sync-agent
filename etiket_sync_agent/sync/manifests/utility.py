@@ -37,6 +37,8 @@ def enqueue_updates(queue: Queue, manifest: Dict[str, float], new_items: Dict[st
     '''
     updated = False
     for path, mod_time in new_items.items():
+        # make sure the formatting is with forward slashes.
+        path = Path(path).as_posix()
         if mod_time == 0:
             continue
         old = manifest.get(path)
