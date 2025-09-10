@@ -1,4 +1,5 @@
-import typing, sqlite3, qcodes as qc, os, logging
+import typing, sqlite3, qcodes as qc, os, logging, xarray
+from typing import Tuple
 
 from datetime import datetime
 
@@ -23,15 +24,15 @@ class QCoDeSSync(SyncSourceDatabaseBase):
     LiveSyncImplemented: typing.ClassVar[bool] = True
     
     @staticmethod
-    def getNewDatasets(configData: QCoDeSConfigData, last_sync_item: SyncItems | None) -> typing.List[SyncItems] | None:
-        if not os.path.exists(configData.database_path):
-            raise FileNotFoundError(f"Database file not found at {configData.database_path}")
+    def getNewDatasets(config_data: QCoDeSConfigData, last_sync_item: SyncItems | None) -> typing.List[SyncItems] | None:
+        if not os.path.exists(config_data.database_path):
+            raise FileNotFoundError(f"Database file not found at {config_data.database_path}")
         
-        qc.config.core.db_location = str(configData.database_path)
+        qc.config.core.db_location = str(config_data.database_path)
         
         newSyncIdentifiers = []
         
-        with sqlite3.connect(configData.database_path) as conn:
+        with sqlite3.connect(config_data.database_path) as conn:
             conn.execute("PRAGMA journal_mode=WAL;")
             last_run_id = -1
             if last_sync_item is not None:
@@ -50,35 +51,35 @@ class QCoDeSSync(SyncSourceDatabaseBase):
     def checkLiveDataset(configData: QCoDeSConfigData, syncIdentifier: SyncItems, maxPriority: bool) -> bool:
         if maxPriority is False:
             return False
-            
+        
         ds_qc = load_by_id(int(syncIdentifier.dataIdentifier))
         return not ds_qc.completed
     
     @staticmethod
     def syncDatasetNormal(configData: QCoDeSConfigData, syncIdentifier: SyncItems, sync_record: SyncRecordManager):
-        with sync_record.task("Loading dataset from QCoDeS"):
-            ds_qc = create_ds_from_qcodes(configData, syncIdentifier, False, sync_record)
-            sync_record.add_log("Converting dataset to xarray format")
-            ds_xr = ds_qc.to_xarray_dataset()
+        with sync_record.task("Creating dataset from QCoDeS dataset (not live)"):
+            ds_qc, ds_xr = create_ds_from_qcodes(configData, syncIdentifier, False, sync_record)
         
-        if ds_qc.run_timestamp_raw is not None:
-            created_time = datetime.fromtimestamp(ds_qc.run_timestamp_raw)
-        else:
-            raise ValueError("Run timestamp is None")
-        
-        f_info = file_info(name = 'measurement', fileName = 'measured_data.hdf5',
-                            fileType= FileType.HDF5_NETCDF,
-                            created = created_time, file_generator = "QCoDeS")
-        sync_utilities.upload_xarray(ds_xr, syncIdentifier, f_info, sync_record)
+        with sync_record.task("Getting and uploading the measured data to the server"):
+            if ds_qc.run_timestamp_raw is not None:
+                created_time = datetime.fromtimestamp(ds_qc.run_timestamp_raw)
+            else:
+                raise ValueError("Run timestamp is None")
+            
+            f_info = file_info(name = 'measurement', fileName = 'measured_data.hdf5',
+                                fileType= FileType.HDF5_NETCDF,
+                                created = created_time, file_generator = "QCoDeS")
+            sync_utilities.upload_xarray(ds_xr, syncIdentifier, f_info, sync_record)
 
     @staticmethod
     def syncDatasetLive(configData: QCoDeSConfigData, syncIdentifier: SyncItems, sync_record: SyncRecordManager):
-        create_ds_from_qcodes(configData, syncIdentifier, True, sync_record)
-        sync_record.add_log("Starting live feed to the remote server.")
-        QCoDeS_live_sync(int(syncIdentifier.dataIdentifier), str(configData.database_path), syncIdentifier.datasetUUID)
-        sync_record.add_log("Live feed to the remote server completed.")
+        with sync_record.task("Creating dataset from QCoDeS dataset (live)"):
+            create_ds_from_qcodes(configData, syncIdentifier, True, sync_record)
+        with sync_record.task("Starting live feed to a local hdf5 file"):
+            QCoDeS_live_sync(int(syncIdentifier.dataIdentifier), str(configData.database_path), syncIdentifier.datasetUUID)
+            sync_record.add_log("Live feed completed.")
 
-def create_ds_from_qcodes(configData: QCoDeSConfigData, syncIdentifier: SyncItems, live : bool, sync_record: SyncRecordManager) -> DataSet:
+def create_ds_from_qcodes(configData: QCoDeSConfigData, syncIdentifier: SyncItems, live : bool, sync_record: SyncRecordManager) -> Tuple[DataSet, xarray.Dataset]:
     sync_record.add_log("Loading dataset and extracting metadata from QCoDeS with ID: " + syncIdentifier.dataIdentifier)
     ds_qc = load_by_id(int(syncIdentifier.dataIdentifier))
     sync_record.add_log("Dataset loaded from QCoDeS, will start extracting metadata")
@@ -149,4 +150,4 @@ def create_ds_from_qcodes(configData: QCoDeSConfigData, syncIdentifier: SyncItem
                 # exp_name not added, since some people use it to name their experiments ...
                 attributes = attributes)
     sync_utilities.create_or_update_dataset(live, syncIdentifier, ds_info, sync_record)
-    return ds_qc
+    return ds_qc, ds_xr
